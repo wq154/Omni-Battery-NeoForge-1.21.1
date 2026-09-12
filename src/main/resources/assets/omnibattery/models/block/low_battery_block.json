@@ -1,0 +1,12 @@
+{
+  "parent": "minecraft:block/cube",
+  "textures": {
+    "particle": "omnibattery:block/low_battery_side",
+    "down": "omnibattery:block/low_battery_top",
+    "up": "omnibattery:block/low_battery_top",
+    "north": "omnibattery:block/low_battery_side",
+    "south": "omnibattery:block/low_battery_side",
+    "west": "omnibattery:block/low_battery_side",
+    "east": "omnibattery:block/low_battery_side"
+  }
+}

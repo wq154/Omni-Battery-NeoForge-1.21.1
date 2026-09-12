@@ -1,0 +1,40 @@
+# Gradle build cache & output
+.gradle/
+build/
+
+# Gradle distribution shipped in-tree (local convenience only, use wrapper instead)
+gradle/gradle-*/
+
+# Gradle wrapper is fine, keep it (so users can just ./gradlew build)
+!gradle/wrapper/
+!gradle/wrapper/**
+
+!build.gradle
+!settings.gradle
+gradle-app.setting
+gradle.properties.bak
+
+# NeoForge dev runs
+run/
+runs/
+
+# compile-only reference jars for optional integrations (Jade / Curios)
+libs/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.eclipse/
+*.classpath
+*.project
+.settings/
+out/
+
+# logs
+*.log
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.tmp

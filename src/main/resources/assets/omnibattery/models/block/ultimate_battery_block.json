@@ -1,0 +1,12 @@
+{
+  "parent": "minecraft:block/cube",
+  "textures": {
+    "particle": "omnibattery:block/ultimate_battery_side",
+    "down": "omnibattery:block/ultimate_battery_top",
+    "up": "omnibattery:block/ultimate_battery_top",
+    "north": "omnibattery:block/ultimate_battery_side",
+    "south": "omnibattery:block/ultimate_battery_side",
+    "west": "omnibattery:block/ultimate_battery_side",
+    "east": "omnibattery:block/ultimate_battery_side"
+  }
+}

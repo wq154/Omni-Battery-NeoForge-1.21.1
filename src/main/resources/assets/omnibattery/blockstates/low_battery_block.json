@@ -1,0 +1,37 @@
+{
+  "variants": {
+    "charge=0": {
+      "model": "omnibattery:block/low_battery_block_charge_0"
+    },
+    "charge=1": {
+      "model": "omnibattery:block/low_battery_block_charge_1"
+    },
+    "charge=2": {
+      "model": "omnibattery:block/low_battery_block_charge_2"
+    },
+    "charge=3": {
+      "model": "omnibattery:block/low_battery_block_charge_3"
+    },
+    "charge=4": {
+      "model": "omnibattery:block/low_battery_block_charge_4"
+    },
+    "charge=5": {
+      "model": "omnibattery:block/low_battery_block_charge_5"
+    },
+    "charge=6": {
+      "model": "omnibattery:block/low_battery_block_charge_6"
+    },
+    "charge=7": {
+      "model": "omnibattery:block/low_battery_block_charge_7"
+    },
+    "charge=8": {
+      "model": "omnibattery:block/low_battery_block_charge_8"
+    },
+    "charge=9": {
+      "model": "omnibattery:block/low_battery_block_charge_9"
+    },
+    "charge=10": {
+      "model": "omnibattery:block/low_battery_block_charge_10"
+    }
+  }
+}

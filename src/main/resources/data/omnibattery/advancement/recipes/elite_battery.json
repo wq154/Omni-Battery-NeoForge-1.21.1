@@ -1,0 +1,16 @@
+{
+  "parent": "minecraft:recipes/root",
+  "criteria": {
+    "has_material": {
+      "conditions": { "items": [ { "items": ["minecraft:emerald", "minecraft:diamond", "omnibattery:advanced_battery"] } ] }
+    ,
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_the_recipe": {
+      "conditions": { "recipe": "omnibattery:elite_battery" },
+      "trigger": "minecraft:recipe_unlocked"
+    }
+  },
+  "requirements": [ [ "has_the_recipe", "has_material" ] ],
+  "rewards": { "recipes": [ "omnibattery:elite_battery" ] }
+}

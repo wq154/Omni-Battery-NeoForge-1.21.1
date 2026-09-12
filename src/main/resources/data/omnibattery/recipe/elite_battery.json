@@ -1,0 +1,23 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "CEC",
+    "EHE",
+    "CEC"
+  ],
+  "key": {
+    "C": {
+      "item": "minecraft:emerald"
+    },
+    "E": {
+      "item": "minecraft:diamond"
+    },
+    "H": {
+      "item": "omnibattery:advanced_battery"
+    }
+  },
+  "result": {
+    "count": 1,
+    "id": "omnibattery:elite_battery"
+  }
+}

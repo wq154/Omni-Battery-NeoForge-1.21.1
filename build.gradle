@@ -1,0 +1,27 @@
+buildscript {
+    repositories { mavenCentral(); maven { url = 'https://maven.neoforged.net/releases' } }
+    dependencies { classpath 'net.neoforged.gradle:userdev:7.1.38' }
+}
+plugins { id 'java-library'; id 'maven-publish' }
+apply plugin: 'net.neoforged.gradle.userdev'
+
+group = 'cn.ayaka.omnibattery'
+version = '1.0.0-neoforge.1.21.1'
+base { archivesName = 'omni-battery-neoforge-1.21.1' }
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+
+repositories { mavenCentral(); maven { url = 'https://maven.neoforged.net/releases' } }
+dependencies { implementation 'net.neoforged:neoforge:21.1.249'
+    // 可选集成：Jade（仅编译期，运行时缺失也不会崩）
+    compileOnly files('libs/Jade-1.21.1-NeoForge-15.10.6.jar')
+    // 可选集成：Curios（仅编译期，运行时缺失走反射优雅降级）
+    compileOnly files('libs/curios-neoforge-9.5.1+1.21.1.jar') }
+
+runs { configureEach { workingDirectory project.layout.projectDirectory.dir('run').dir(name); modSource project.sourceSets.main }; client {}; server { argument '--nogui' } }
+
+processResources {
+    var props = [version: project.version, mod_id: 'omnibattery', mod_name: 'Omni Battery', mod_license: 'MIT', loader_version_range: '[1,)', minecraft_version: '1.21.1', minecraft_version_range: '[1.21.1]', neo_version: '21.1.249']
+    inputs.properties props
+    filesMatching('META-INF/neoforge.mods.toml') { expand props }
+}
+tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }

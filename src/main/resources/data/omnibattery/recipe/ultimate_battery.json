@@ -1,0 +1,23 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "CEC",
+    "EHE",
+    "CEC"
+  ],
+  "key": {
+    "C": {
+      "item": "minecraft:nether_star"
+    },
+    "E": {
+      "item": "minecraft:emerald"
+    },
+    "H": {
+      "item": "omnibattery:elite_battery"
+    }
+  },
+  "result": {
+    "count": 1,
+    "id": "omnibattery:ultimate_battery"
+  }
+}

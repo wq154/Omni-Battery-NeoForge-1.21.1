@@ -1,0 +1,143 @@
+package cn.ayaka.omnibattery;
+
+import cn.ayaka.omnibattery.registry.ModMenuTypes;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ContainerData;
+import net.minecraft.world.inventory.SimpleContainerData;
+import net.minecraft.world.item.ItemStack;
+
+/**
+ * 电池设置菜单（移植自 1.20.1 原版）。
+ * 8 个 data slot：0-1 能量(long)、2-3 容量(long)、4 等级、5 模式、6 速率档、7 范围。
+ * 服务端持有 BlockEntity 引用并每次 broadcastChanges 时刷新；客户端仅由 data slot 同步显示。
+ */
+public class OmniBatteryMenu extends AbstractContainerMenu {
+    private final ContainerData data;
+    private final OmniBatteryBlockEntity blockEntity;
+
+    /** 服务端：从方块实体创建 */
+    public OmniBatteryMenu(int id, Inventory inv, OmniBatteryBlockEntity be) {
+        super(ModMenuTypes.OMNI_BATTERY.get(), id);
+        this.blockEntity = be;
+        this.data = new SimpleContainerData(8);
+        addDataSlots(data);
+    }
+
+    /** 客户端：由 MenuType 工厂创建（不含 BE 引用，纯 data slot 显示） */
+    public OmniBatteryMenu(int id, Inventory inv) {
+        this(id, inv, (OmniBatteryBlockEntity) null);
+    }
+
+    @Override
+    public boolean stillValid(Player player) {
+        // 客户端没有 BE 引用，保持打开；服务端在方块被移除后关闭
+        return blockEntity == null || (!blockEntity.isRemoved() && blockEntity.getLevel() != null
+                && blockEntity.getLevel().getBlockEntity(blockEntity.getBlockPos()) == blockEntity);
+    }
+
+    @Override
+    public ItemStack quickMoveStack(Player player, int index) {
+        return ItemStack.EMPTY;
+    }
+
+    @Override
+    public void broadcastChanges() {
+        super.broadcastChanges();
+        if (blockEntity != null) {
+            syncLong(0, blockEntity.getEnergy());
+            syncLong(2, blockEntity.getTier().capacity());
+            data.set(4, blockEntity.getTier().ordinal());
+            data.set(5, blockEntity.getMode().ordinal());
+            data.set(6, blockEntity.getRateIndex());
+            data.set(7, blockEntity.getRange());
+        }
+    }
+
+    private void syncLong(int index, long value) {
+        data.set(index, (int) (value & 0xFFFFFFFFL));
+        data.set(index + 1, (int) (value >>> 32 & 0xFFFFFFFFL));
+    }
+
+    private long readLong(int index) {
+        return Integer.toUnsignedLong(data.get(index + 1)) << 32 | Integer.toUnsignedLong(data.get(index));
+    }
+
+    @Override
+    public boolean clickMenuButton(Player player, int button) {
+        if (blockEntity == null) return false;
+        switch (button) {
+            case 0 -> blockEntity.setMode(blockEntity.getMode().next());
+            case 1 -> blockEntity.setRateIndex(Math.min(4, blockEntity.getRateIndex() + 1));
+            case 2 -> blockEntity.setRateIndex(Math.max(0, blockEntity.getRateIndex() - 1));
+            case 3 -> blockEntity.setRange(cycleRange(blockEntity.getRange(), blockEntity.getTier(), true));
+            case 4 -> blockEntity.setRange(cycleRange(blockEntity.getRange(), blockEntity.getTier(), false));
+            default -> {
+                return false;
+            }
+        }
+        broadcastChanges();
+        return true;
+    }
+
+    /**
+     * 范围档位切换：+ 只升档、- 只降档，到达上下限后保持（不再循环回绕）。
+     * 终极电池在最大有限档之上还有"全维度(-1)"。
+     */
+    private int cycleRange(int current, BatteryTier tier, boolean increase) {
+        int[] steps = tier.rangeSteps();
+        if (current < 0) {
+            // 当前已是全维度：继续 + 保持全维度，- 退回最大有限档
+            return increase ? -1 : steps[steps.length - 2];
+        }
+        if (increase) {
+            for (int s : steps) {
+                if (s < 0) return -1;   // 到全维度（仅终极有）
+                if (s > current) return s;
+            }
+            return current;             // 已是最大有限档
+        }
+        int best = current;
+        for (int s : steps) {
+            if (s >= 0 && s < current) best = s;
+        }
+        return best;                    // 已是最小档则保持不变
+    }
+
+    // ---------------- 供 GUI 读取（data slot 同步值） ----------------
+
+    public long getEnergy() { return readLong(0); }
+    public long getMaxEnergy() { return readLong(2); }
+    public BatteryTier getTier() {
+        return BatteryTier.values()[Math.max(0, Math.min(data.get(4), BatteryTier.values().length - 1))];
+    }
+    public BatteryMode getMode() {
+        return BatteryMode.values()[Math.max(0, Math.min(data.get(5), BatteryMode.values().length - 1))];
+    }
+    public int getRateIndex() { return data.get(6); }
+    public int getRange() { return data.get(7); }
+
+    public float getEnergyRatio() {
+        return getMaxEnergy() > 0L ? (float) Math.min(1.0, (double) getEnergy() / (double) getMaxEnergy()) : 0.0f;
+    }
+
+    public String getRateDisplay() {
+        BatteryTier tier = getTier();
+        if (tier.isUltimate() && getRateIndex() >= tier.rates().length - 1) return "\u65e0\u9650";
+        return fmt(tier.rate(getRateIndex())) + " FE/t";
+    }
+
+    public static String fmt(long v) {
+        if (v >= 1_000_000_000_000L) return String.format("%.1fT", v / 1e12);
+        if (v >= 1_000_000_000L) return String.format("%.1fB", v / 1e9);
+        if (v >= 1_000_000L) return String.format("%.1fM", v / 1e6);
+        if (v >= 1_000L) return String.format("%.1fK", v / 1e3);
+        return String.valueOf(v);
+    }
+
+    public String getRangeDisplay() {
+        int r = getRange();
+        return r < 0 ? "\u5168\u7ef4\u5ea6" : String.format("%,d \u683c", r);
+    }
+}
