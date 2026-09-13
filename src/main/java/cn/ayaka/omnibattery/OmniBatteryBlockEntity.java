@@ -943,9 +943,47 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
 
     /**
      * 两名玩家是否处于同一队伍：原版记分板队伍（/team），或 FTB Teams（若已安装）。
+     * 判定失败时给出限流诊断（30 秒最多一条），方便定位"队友标签不生效"。
      */
     private boolean sameTeam(java.util.UUID a, java.util.UUID b) {
-        return sameVanillaTeam(a, b) || sameFtbTeam(a, b);
+        if (sameVanillaTeam(a, b)) return true;
+        boolean ftb = sameFtbTeam(a, b);
+        if (ftb) return true;
+        diagnoseTeamFailure(a, b);
+        return false;
+    }
+
+    private static long lastTeamDiag = 0L;
+
+    /** 队伍判定失败时的诊断输出（限流 30 秒）。 */
+    private void diagnoseTeamFailure(java.util.UUID a, java.util.UUID b) {
+        if (!(level instanceof net.minecraft.server.level.ServerLevel sl)) return;
+        long now = System.currentTimeMillis();
+        if (now - lastTeamDiag < 30000L) return;
+        lastTeamDiag = now;
+        net.minecraft.server.MinecraftServer server = sl.getServer();
+        String na = playerNameOf(server, a);
+        String nb = playerNameOf(server, b);
+        String teamA = "(未知)";
+        String teamB = "(未知)";
+        if (na != null) {
+            net.minecraft.world.scores.PlayerTeam t = server.getScoreboard().getPlayersTeam(na);
+            teamA = t == null ? "(无队伍)" : t.getName();
+        }
+        if (nb != null) {
+            net.minecraft.world.scores.PlayerTeam t = server.getScoreboard().getPlayersTeam(nb);
+            teamB = t == null ? "(无队伍)" : t.getName();
+        }
+        boolean ftbAvailable;
+        try {
+            ftbAvailable = Class.forName("dev.ftb.mods.ftbteams.api.FTBTeamsAPI") != null;
+        } catch (Throwable t) {
+            ftbAvailable = false;
+        }
+        server.sendSystemMessage(net.minecraft.network.chat.Component.literal(
+                "[万能电池·队伍诊断] 主人=" + (na == null ? String.valueOf(a) : na) + " 原版队伍=" + teamA
+                        + " ｜ 对方=" + (nb == null ? String.valueOf(b) : nb) + " 原版队伍=" + teamB
+                        + " ｜ FTB已装=" + ftbAvailable + " FTB同队=" + sameFtbTeam(a, b)));
     }
 
     /** 原版 /team 记分板队伍（按玩家名查，主人离线也可判定）。 */
