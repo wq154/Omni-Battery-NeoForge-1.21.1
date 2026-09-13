@@ -63,10 +63,10 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
     private BatteryAccess access = BatteryAccess.PRIVATE;
     private java.util.UUID ownerUuid = null;
     private String ownerName = "";
-    /** 是否给玩家物品栏（含快捷栏/护甲/副手）内的物品供电。 */
-    private boolean chargeInventory = true;
-    /** 是否给玩家饰品栏（Curios）内的物品供电。 */
-    private boolean chargeCurios = true;
+    /** 是否给玩家物品栏（含快捷栏/护甲/副手）内的物品供电（默认关闭）。 */
+    private boolean chargeInventory = false;
+    /** 是否给玩家饰品栏（Curios）内的物品供电（默认关闭）。 */
+    private boolean chargeCurios = false;
     private int rateIndex;
     private int range;
     private int tickCount;
@@ -1134,8 +1134,8 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         range = tag.contains("Range") ? tag.getInt("Range") : tier.defaultRange();
         lastAbsorbed = tag.getLong("LastAbsorbed");
         lastSupplied = tag.getLong("LastSupplied");
-        chargeInventory = !tag.contains("ChargeInventory") || tag.getBoolean("ChargeInventory");
-        chargeCurios = !tag.contains("ChargeCurios") || tag.getBoolean("ChargeCurios");
+        chargeInventory = tag.contains("ChargeInventory") && tag.getBoolean("ChargeInventory");
+        chargeCurios = tag.contains("ChargeCurios") && tag.getBoolean("ChargeCurios");
         int ai = tag.getInt("Access");
         BatteryAccess[] accs = BatteryAccess.values();
         access = ai >= 0 && ai < accs.length ? accs[ai] : BatteryAccess.PRIVATE;
