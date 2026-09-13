@@ -8,6 +8,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.ItemInteractionResult;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -125,7 +126,21 @@ public class OmniBatteryBlock extends BaseEntityBlock {
         if (level.isClientSide) return;
         BlockEntity be = level.getBlockEntity(pos);
         if (be instanceof OmniBatteryBlockEntity battery && player instanceof ServerPlayer sp) {
+            // 关键：首次右键者成为主人（否则权限判定会因 ownerUuid 为空而全部放行）
+            battery.ensureOwner(sp);
             sp.openMenu(battery);
+        }
+    }
+
+    /** 放置时认领：放置者即刻成为电池主人。 */
+    @Override
+    public void setPlacedBy(Level level, BlockPos pos, BlockState state, @Nullable LivingEntity placer, ItemStack stack) {
+        super.setPlacedBy(level, pos, state, placer, stack);
+        if (!level.isClientSide && placer instanceof Player p) {
+            BlockEntity be = level.getBlockEntity(pos);
+            if (be instanceof OmniBatteryBlockEntity battery) {
+                battery.ensureOwner(p);
+            }
         }
     }
 
