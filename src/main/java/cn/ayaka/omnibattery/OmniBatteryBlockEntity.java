@@ -914,10 +914,12 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         return false;
     }
 
-    /** 贴纸是否可用于本电池（按贴标者权限判定）。 */
+    /** 贴纸是否可用于本电池（按贴标者权限判定；无归属的老贴纸按主人贴的算）。 */
     private boolean canUseSticker(StickerSavedData.StickerEntry entry) {
         if (access == BatteryAccess.PUBLIC) return true;
-        return entry != null && canUsePower(entry.owner());
+        if (entry == null) return false;
+        java.util.UUID who = entry.owner() != null ? entry.owner() : ownerUuid;
+        return canUsePower(who);
     }
 
     /**
@@ -939,37 +941,46 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         return ta != null && ta == scoreboard.getPlayersTeam(nameB);
     }
 
-    /** FTB Teams 兼容（软依赖：反射调用，未安装时静默返回 false，不产生编译期依赖）。 */
+    /**
+     * FTB Teams 兼容（软依赖：纯反射，未安装时返回 false，不产生编译期依赖）。
+     * 关键点：必须通过**公开接口类**（FTBTeamsAPI$API / TeamManager / Team）查找方法，
+     * 实现类是包私有的，经实现类反射调用会被拒绝。
+     * 判定基于队伍成员集合，因此**离线玩家同样有效**。
+     */
     private static boolean sameFtbTeam(java.util.UUID a, java.util.UUID b) {
-        if (a == null || b == null || a.equals(b)) return false;
+        if (a == null || b == null) return false;
+        if (a.equals(b)) return true;
         try {
-            Class<?> apiCls = Class.forName("dev.ftb.mods.ftbteams.api.FTBTeamsAPI");
-            Object api = apiCls.getMethod("api").invoke(null);
+            Object api = Class.forName("dev.ftb.mods.ftbteams.api.FTBTeamsAPI")
+                    .getMethod("api").invoke(null);
             if (api == null) return false;
-            Object manager = api.getClass().getMethod("getManager").invoke(api);
+            Class<?> apiIface = Class.forName("dev.ftb.mods.ftbteams.api.FTBTeamsAPI$API");
+            Object loaded = apiIface.getMethod("isManagerLoaded").invoke(api);
+            if (!(loaded instanceof Boolean lb) || !lb) return false;
+            Object manager = apiIface.getMethod("getManager").invoke(api);
             if (manager == null) return false;
-            // 优先 TeamManager#arePlayersInSameTeam(UUID, UUID)
-            for (java.lang.reflect.Method m : manager.getClass().getMethods()) {
-                if (m.getName().equals("arePlayersInSameTeam") && m.getParameterCount() == 2) {
-                    Object r = m.invoke(manager, a, b);
-                    if (r instanceof Boolean bb) return bb;
-                }
-            }
-            // 退化：getTeamForPlayerID(UUID) 比较队伍 ID
-            java.lang.reflect.Method getTeam = null;
-            for (java.lang.reflect.Method m : manager.getClass().getMethods()) {
-                if (m.getName().equals("getTeamForPlayerID") && m.getParameterCount() == 1) {
-                    getTeam = m;
-                    break;
-                }
-            }
-            if (getTeam == null) return false;
-            Object ta = optionalOrNull(getTeam.invoke(manager, a));
-            Object tb = optionalOrNull(getTeam.invoke(manager, b));
-            if (ta == null || tb == null) return false;
-            Object idA = ta.getClass().getMethod("getId").invoke(ta);
-            Object idB = tb.getClass().getMethod("getId").invoke(tb);
-            return idA != null && idA.equals(idB);
+            Class<?> mgrIface = Class.forName("dev.ftb.mods.ftbteams.api.TeamManager");
+
+            // 1) 直接由 manager 回答
+            Object direct = mgrIface
+                    .getMethod("arePlayersInSameTeam", java.util.UUID.class, java.util.UUID.class)
+                    .invoke(manager, a, b);
+            if (direct instanceof Boolean db && db) return true;
+
+            // 2) 比较双方队伍：ID 相同，或 b 属于 a 的队伍成员（离线玩家也在 members 中）
+            Class<?> teamIface = Class.forName("dev.ftb.mods.ftbteams.api.Team");
+            java.lang.reflect.Method getTeam = mgrIface.getMethod("getPlayerTeamForPlayerID", java.util.UUID.class);
+            Object oa = getTeam.invoke(manager, a);
+            Object ob = getTeam.invoke(manager, b);
+            if (!(oa instanceof java.util.Optional<?> pa) || !(ob instanceof java.util.Optional<?> pb)) return false;
+            if (pa.isEmpty() || pb.isEmpty()) return false;
+            Object ta = pa.get();
+            Object tb = pb.get();
+            Object ida = teamIface.getMethod("getId").invoke(ta);
+            Object idb = teamIface.getMethod("getId").invoke(tb);
+            if (ida != null && ida.equals(idb)) return true;
+            Object members = teamIface.getMethod("getMembers").invoke(ta);
+            return members instanceof java.util.Set<?> ms && ms.contains(b);
         } catch (Throwable ignored) {
             return false;
         }

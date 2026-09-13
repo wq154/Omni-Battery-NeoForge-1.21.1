@@ -18,7 +18,7 @@ import net.minecraft.world.entity.player.Inventory;
  * 与左侧标签的最小间距 24px，杜绝重叠。
  */
 public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> {
-    private static final int W = 320;
+    private static final int W = 214;
     private static final int H = 272;
 
     // 顶栏
@@ -50,7 +50,7 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
     private static final int BTN_H = 18;
 
     // 按钮位置 (相对面板)
-    private static final int BTN_MODE_W = 76;
+    private static final int BTN_MODE_W = 62;
     private static final int BTN_PM_W = 18;
 
     private int pressedId = -1;
@@ -181,13 +181,13 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
 
         // ==== 玩家供电开关 + 权限（合并一行）====
         drawRow(graphics, x, y, ROW7, "玩家/权限");
-        drawNamedSwitch(graphics, rightEdge - 156, y + ROW7 + 1, 44, BTN_H, "物品",
+        drawNamedSwitch(graphics, rightEdge - 142, y + ROW7 + 1, 40, BTN_H, "物品",
                 menu.isChargeInventory(), mouseX, mouseY, 6,
                 menu.isChargeInventory() ? "关闭：不给物品栏物品充电" : "开启：给物品栏物品充电");
-        drawNamedSwitch(graphics, rightEdge - 108, y + ROW7 + 1, 44, BTN_H, "饰品",
+        drawNamedSwitch(graphics, rightEdge - 98, y + ROW7 + 1, 40, BTN_H, "饰品",
                 menu.isChargeCurios(), mouseX, mouseY, 7,
                 menu.isChargeCurios() ? "关闭：不给饰品栏物品充电" : "开启：给饰品栏物品充电");
-        drawChip(graphics, rightEdge - 60, y + ROW7 + 1, 60, BTN_H,
+        drawChip(graphics, rightEdge - 54, y + ROW7 + 1, 54, BTN_H,
                 menu.getAccessDisplay(), mouseX, mouseY, 8, "切换权限：私人 / 队伍 / 公开");
 
         // ==== 趋势图（最近吸电/供电每秒趋势）====
@@ -341,9 +341,9 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
         if (isHover(mx, my, minusX, y + ROW3 + 1, BTN_PM_W, BTN_H)) return press(4);
         if (isHover(mx, my, plusX, y + ROW3 + 1, BTN_PM_W, BTN_H)) return press(3);
         // 玩家供电开关 + 权限（同一行）
-        if (isHover(mx, my, rightEdge - 156, y + ROW7 + 1, 44, BTN_H)) return press(6);
-        if (isHover(mx, my, rightEdge - 108, y + ROW7 + 1, 44, BTN_H)) return press(7);
-        if (isHover(mx, my, rightEdge - 60, y + ROW7 + 1, 60, BTN_H)) return press(8);
+        if (isHover(mx, my, rightEdge - 142, y + ROW7 + 1, 40, BTN_H)) return press(6);
+        if (isHover(mx, my, rightEdge - 98, y + ROW7 + 1, 40, BTN_H)) return press(7);
+        if (isHover(mx, my, rightEdge - 54, y + ROW7 + 1, 54, BTN_H)) return press(8);
         // 范围显示
         if (isHover(mx, my, rightEdge - 44, y + ROW4 + 1, 44, BTN_H)) {
             pressedId = 5;
