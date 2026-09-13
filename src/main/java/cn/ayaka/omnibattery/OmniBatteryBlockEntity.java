@@ -59,6 +59,10 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
     private final BatteryTier tier;
     private long energy;
     private BatteryMode mode = BatteryMode.BOTH;
+    /** 用电权限：私人 / 队伍 / 公开。 */
+    private BatteryAccess access = BatteryAccess.PRIVATE;
+    private java.util.UUID ownerUuid = null;
+    private String ownerName = "";
     /** 是否给玩家物品栏（含快捷栏/护甲/副手）内的物品供电。 */
     private boolean chargeInventory = true;
     /** 是否给玩家饰品栏（Curios）内的物品供电。 */
@@ -228,13 +232,15 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
             for (BlockPos targetPos : getLoadedBlockEntityPositions(level)) {
                 if (remaining <= 0) break;
                 if (level == originLevel && targetPos.equals(worldPosition)) continue;
-                StickerMode sticker = stickerData.getMode(targetPos);
+                StickerSavedData.StickerEntry stickerEntry = stickerData.getEntry(targetPos);
+                StickerMode sticker = stickerEntry == null ? null : stickerEntry.mode();
                 if (sticker == null || !sticker.isActiveTransferMode()) continue;
                 BlockEntity be = level.getBlockEntity(targetPos);
                 if (be == null || be.isRemoved()) { stickerData.removeSticker(targetPos); continue; }
                 if (be instanceof OmniBatteryBlockEntity) { stickerData.removeSticker(targetPos); continue; }
                 if (!hasAnyEnergyCapability(level, be)) { stickerData.removeSticker(targetPos); continue; }
                 if (sticker != StickerMode.ABSORB && sticker != StickerMode.OVERLOAD) continue;
+                if (!canUseSticker(stickerEntry)) continue;
                 if (sticker == StickerMode.ABSORB) {
                     // 无限档突破：对同一目标重复传输，直到预算用尽或对方无能量（单次受 int 上限 21 亿限制）
                     int loops = 0;
@@ -274,13 +280,15 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
             for (BlockPos targetPos : getLoadedBlockEntityPositions(level)) {
                 if (remaining <= 0) break;
                 if (level == originLevel && targetPos.equals(worldPosition)) continue;
-                StickerMode sticker = stickerData.getMode(targetPos);
+                StickerSavedData.StickerEntry stickerEntry = stickerData.getEntry(targetPos);
+                StickerMode sticker = stickerEntry == null ? null : stickerEntry.mode();
                 if (sticker == null || !sticker.isActiveTransferMode()) continue;
                 BlockEntity be = level.getBlockEntity(targetPos);
                 if (be == null || be.isRemoved()) { stickerData.removeSticker(targetPos); continue; }
                 if (be instanceof OmniBatteryBlockEntity) { stickerData.removeSticker(targetPos); continue; }
                 if (!hasAnyEnergyCapability(level, be)) { stickerData.removeSticker(targetPos); continue; }
                 if (sticker != StickerMode.SUPPLY && sticker != StickerMode.OVERLOAD) continue;
+                if (!canUseSticker(stickerEntry)) continue;
                 if (sticker == StickerMode.SUPPLY) {
                     // 无限档突破：对同一目标重复传输，直到预算用尽或对方已满（单次受 int 上限 21 亿限制）
                     int loops = 0;
@@ -615,6 +623,7 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
             if (!(level instanceof ServerLevel playerLevel)) continue;
             if (!isLevelLoaded(playerLevel, player.blockPosition())) continue;
             if (!tier.isUltimate() && !isTargetInRange(player.blockPosition())) continue;
+            if (!canUsePower(player.getUUID())) continue;
             List<ItemStack> targets = new ArrayList<>();
             // 物品栏供电开关（背包类容器物品永不受电，见下方 isBackpackLikeItem）
             if (chargeInventory) {
@@ -871,6 +880,61 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
     public boolean isChargeInventory() { return chargeInventory; }
     public boolean isChargeCurios() { return chargeCurios; }
 
+    // ---------------- 权限（私人 / 队伍 / 公开） ----------------
+
+    public BatteryAccess getAccess() { return access; }
+    public String getOwnerName() { return ownerName == null ? "" : ownerName; }
+
+    public void setAccess(BatteryAccess a) {
+        access = a;
+        setChanged();
+        syncToClients();
+    }
+
+    /** 首次交互者成为主人。 */
+    public void ensureOwner(Player player) {
+        if (ownerUuid == null && player != null) {
+            ownerUuid = player.getUUID();
+            ownerName = player.getGameProfile().getName();
+            setChanged();
+        }
+    }
+
+    /** 仅主人可修改电池设置（其他人仍可看 GUI）。 */
+    public boolean canManage(Player player) {
+        return player != null && (ownerUuid == null || ownerUuid.equals(player.getUUID()));
+    }
+
+    /** 某玩家是否可用本电池传电。 */
+    public boolean canUsePower(java.util.UUID uuid) {
+        if (access == BatteryAccess.PUBLIC) return true;
+        if (uuid == null) return false;
+        if (ownerUuid == null || ownerUuid.equals(uuid)) return true;
+        if (access == BatteryAccess.TEAM) return sameTeam(ownerUuid, uuid);
+        return false;
+    }
+
+    /** 贴纸是否可用于本电池（按贴标者权限判定）。 */
+    private boolean canUseSticker(StickerSavedData.StickerEntry entry) {
+        if (access == BatteryAccess.PUBLIC) return true;
+        return entry != null && canUsePower(entry.owner());
+    }
+
+    /** 两名玩家是否处于同一记分板队伍。 */
+    private boolean sameTeam(java.util.UUID a, java.util.UUID b) {
+        if (!(level instanceof net.minecraft.server.level.ServerLevel sl)) return false;
+        net.minecraft.server.level.ServerPlayer pa = sl.getServer().getPlayerList().getPlayer(a);
+        net.minecraft.server.level.ServerPlayer pb = sl.getServer().getPlayerList().getPlayer(b);
+        if (pa == null || pb == null) return false;
+        net.minecraft.world.scores.PlayerTeam ta = pa.getTeam();
+        return ta != null && ta == pb.getTeam();
+    }
+
+    private static java.util.UUID parseUuidOrNull(String s) {
+        if (s == null || s.isEmpty()) return null;
+        try { return java.util.UUID.fromString(s); } catch (IllegalArgumentException e) { return null; }
+    }
+
     public void setChargeInventory(boolean v) {
         chargeInventory = v;
         setChanged();
@@ -993,6 +1057,9 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         // 玩家供电开关
         tag.putBoolean("ChargeInventory", chargeInventory);
         tag.putBoolean("ChargeCurios", chargeCurios);
+        tag.putInt("Access", access.ordinal());
+        if (ownerUuid != null) tag.putString("OwnerUuid", ownerUuid.toString());
+        if (ownerName != null) tag.putString("OwnerName", ownerName);
     }
 
     @Override
@@ -1008,6 +1075,11 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         lastSupplied = tag.getLong("LastSupplied");
         chargeInventory = !tag.contains("ChargeInventory") || tag.getBoolean("ChargeInventory");
         chargeCurios = !tag.contains("ChargeCurios") || tag.getBoolean("ChargeCurios");
+        int ai = tag.getInt("Access");
+        BatteryAccess[] accs = BatteryAccess.values();
+        access = ai >= 0 && ai < accs.length ? accs[ai] : BatteryAccess.PRIVATE;
+        ownerUuid = parseUuidOrNull(tag.getString("OwnerUuid"));
+        ownerName = tag.getString("OwnerName");
     }
 
     // ------------------------------------------------------------ 鍐呴儴宸ュ叿

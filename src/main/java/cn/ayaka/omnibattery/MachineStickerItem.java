@@ -84,7 +84,7 @@ public class MachineStickerItem extends Item {
             data.removeSticker(pos);
             player.displayClientMessage(Component.literal("\u5df2\u6e05\u9664\u673a\u5668\u6807\u7b7e").withStyle(ChatFormatting.GRAY), true);
         } else {
-            data.setMode(pos, mode);
+            data.setMode(pos, mode, player.getUUID(), player.getGameProfile().getName());
             player.displayClientMessage(
                     Component.literal("\u5df2\u8d34\u6807\u7b7e: ").withStyle(ChatFormatting.AQUA)
                             .append(Component.literal(mode.displayZh()).withStyle(colorOf(mode))), true);

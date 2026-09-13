@@ -9,14 +9,15 @@ import net.minecraft.world.level.saveddata.SavedData;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 
 /**
- * 每维度一张"贴标机器表"：记录被 Machine Sticker 标记的机器坐标及其模式。
- * 与 1.20.1 原版相同，数据存 SavedData（键名 omnibattery_stickers，兼容旧档）。
+ * 每维度一张"贴标机器表"：记录被 Machine Sticker 标记的机器坐标、模式与贴标者。
+ * 贴标者用于电池权限判定（私人 / 队伍 / 公开）。
  */
 public class StickerSavedData extends SavedData {
     private static final String DATA_NAME = "omnibattery_stickers";
-    private final Map<BlockPos, StickerMode> stickers = new HashMap<>();
+    private final Map<BlockPos, StickerEntry> stickers = new HashMap<>();
 
     public static StickerSavedData load(CompoundTag tag, HolderLookup.Provider provider) {
         StickerSavedData data = new StickerSavedData();
@@ -26,7 +27,10 @@ public class StickerSavedData extends SavedData {
             BlockPos pos = new BlockPos(entry.getInt("x"), entry.getInt("y"), entry.getInt("z"));
             int modeIdx = entry.getInt("mode");
             if (modeIdx < 0 || modeIdx >= StickerMode.values().length) continue;
-            data.stickers.put(pos.immutable(), StickerMode.values()[modeIdx]);
+            data.stickers.put(pos.immutable(), new StickerEntry(
+                    StickerMode.values()[modeIdx],
+                    parseUUID(entry.getString("owner")),
+                    entry.getString("ownerName")));
         }
         return data;
     }
@@ -34,27 +38,38 @@ public class StickerSavedData extends SavedData {
     @Override
     public CompoundTag save(CompoundTag tag, HolderLookup.Provider provider) {
         ListTag list = new ListTag();
-        for (Map.Entry<BlockPos, StickerMode> entry : stickers.entrySet()) {
-            CompoundTag entryTag = new CompoundTag();
-            entryTag.putInt("x", entry.getKey().getX());
-            entryTag.putInt("y", entry.getKey().getY());
-            entryTag.putInt("z", entry.getKey().getZ());
-            entryTag.putInt("mode", entry.getValue().ordinal());
-            list.add(entryTag);
+        for (Map.Entry<BlockPos, StickerEntry> e : stickers.entrySet()) {
+            CompoundTag t = new CompoundTag();
+            t.putInt("x", e.getKey().getX());
+            t.putInt("y", e.getKey().getY());
+            t.putInt("z", e.getKey().getZ());
+            t.putInt("mode", e.getValue().mode().ordinal());
+            if (e.getValue().owner() != null) t.putString("owner", e.getValue().owner().toString());
+            if (e.getValue().ownerName() != null) t.putString("ownerName", e.getValue().ownerName());
+            list.add(t);
         }
         tag.put("stickers", list);
         return tag;
     }
 
     public StickerMode getMode(BlockPos pos) {
+        StickerEntry e = stickers.get(pos);
+        return e == null ? null : e.mode();
+    }
+
+    public StickerEntry getEntry(BlockPos pos) {
         return stickers.get(pos);
     }
 
     public void setMode(BlockPos pos, StickerMode mode) {
+        setMode(pos, mode, null, "");
+    }
+
+    public void setMode(BlockPos pos, StickerMode mode, UUID owner, String ownerName) {
         if (mode == null) {
             stickers.remove(pos);
         } else {
-            stickers.put(pos.immutable(), mode);
+            stickers.put(pos.immutable(), new StickerEntry(mode, owner, ownerName == null ? "" : ownerName));
         }
         setDirty();
     }
@@ -69,4 +84,12 @@ public class StickerSavedData extends SavedData {
                 new SavedData.Factory<>(StickerSavedData::new, StickerSavedData::load);
         return level.getDataStorage().computeIfAbsent(factory, DATA_NAME);
     }
+
+    private static UUID parseUUID(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        try { return UUID.fromString(raw); } catch (IllegalArgumentException ignored) { return null; }
+    }
+
+    /** 单条贴纸记录：模式 + 贴标者。 */
+    public record StickerEntry(StickerMode mode, UUID owner, String ownerName) {}
 }

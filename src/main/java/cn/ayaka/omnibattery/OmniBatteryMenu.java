@@ -21,7 +21,7 @@ public class OmniBatteryMenu extends AbstractContainerMenu {
     public OmniBatteryMenu(int id, Inventory inv, OmniBatteryBlockEntity be) {
         super(ModMenuTypes.OMNI_BATTERY.get(), id);
         this.blockEntity = be;
-        this.data = new SimpleContainerData(14 + OmniBatteryBlockEntity.HISTORY_SIZE * 4);
+        this.data = new SimpleContainerData(15 + OmniBatteryBlockEntity.HISTORY_SIZE * 4);
         addDataSlots(data);
     }
 
@@ -59,10 +59,11 @@ public class OmniBatteryMenu extends AbstractContainerMenu {
             syncLong(10, blockEntity.getSuppliedPerSecond());  // slot 10-11
             data.set(12, blockEntity.isChargeInventory() ? 1 : 0);
             data.set(13, blockEntity.isChargeCurios() ? 1 : 0);
+            data.set(14, blockEntity.getAccess().ordinal());
             // 趋势图历史：每点 4 个 int slot（absorb long + supply long）
             for (int i = 0; i < OmniBatteryBlockEntity.HISTORY_SIZE; i++) {
-                syncLong(14 + i * 4, blockEntity.getAbsorbHistory(i));
-                syncLong(14 + i * 4 + 2, blockEntity.getSupplyHistory(i));
+                syncLong(15 + i * 4, blockEntity.getAbsorbHistory(i));
+                syncLong(15 + i * 4 + 2, blockEntity.getSupplyHistory(i));
             }
         }
         super.broadcastChanges();
@@ -80,6 +81,9 @@ public class OmniBatteryMenu extends AbstractContainerMenu {
     @Override
     public boolean clickMenuButton(Player player, int button) {
         if (blockEntity == null) return false;
+        // 首次交互者成为主人；此后仅主人可改设置
+        blockEntity.ensureOwner(player);
+        if (!blockEntity.canManage(player)) return false;
         switch (button) {
             case 0 -> blockEntity.setMode(blockEntity.getMode().next());
             case 1 -> blockEntity.setRateIndex(Math.min(4, blockEntity.getRateIndex() + 1));
@@ -88,6 +92,7 @@ public class OmniBatteryMenu extends AbstractContainerMenu {
             case 4 -> blockEntity.setRange(cycleRange(blockEntity.getRange(), blockEntity.getTier(), false));
             case 6 -> blockEntity.setChargeInventory(!blockEntity.isChargeInventory());
             case 7 -> blockEntity.setChargeCurios(!blockEntity.isChargeCurios());
+            case 8 -> blockEntity.setAccess(blockEntity.getAccess().next());
             default -> {
                 return false;
             }
@@ -129,10 +134,14 @@ public class OmniBatteryMenu extends AbstractContainerMenu {
 
     // ---------------- 趋势图历史（客户端从 data slot 读取） ----------------
     public int getHistorySize() { return OmniBatteryBlockEntity.HISTORY_SIZE; }
-    public long getAbsorbHistory(int i) { return readLong(14 + i * 4); }
-    public long getSupplyHistory(int i) { return readLong(14 + i * 4 + 2); }
+    public long getAbsorbHistory(int i) { return readLong(15 + i * 4); }
+    public long getSupplyHistory(int i) { return readLong(15 + i * 4 + 2); }
     public boolean isChargeInventory() { return data.get(12) != 0; }
     public boolean isChargeCurios() { return data.get(13) != 0; }
+    public BatteryAccess getAccess() {
+        return BatteryAccess.values()[Math.max(0, Math.min(data.get(14), BatteryAccess.values().length - 1))];
+    }
+    public String getAccessDisplay() { return getAccess().display(); }
     public BatteryTier getTier() {
         return BatteryTier.values()[Math.max(0, Math.min(data.get(4), BatteryTier.values().length - 1))];
     }

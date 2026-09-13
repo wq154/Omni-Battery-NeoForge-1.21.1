@@ -48,7 +48,7 @@ public final class AutoStickerHandler {
         if (mode == StickerMode.CLEAR) return;   // 自动贴标模式为"清除"时不做操作
 
         StickerSavedData data = StickerSavedData.get(serverLevel);
-        data.setMode(pos, mode);
+        data.setMode(pos, mode, player.getUUID(), player.getGameProfile().getName());
 
         player.displayClientMessage(
                 net.minecraft.network.chat.Component.literal("\u81ea\u52a8\u8d34\u6807: ")

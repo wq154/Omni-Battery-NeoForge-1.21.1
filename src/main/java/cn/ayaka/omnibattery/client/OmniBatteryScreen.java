@@ -19,7 +19,7 @@ import net.minecraft.world.entity.player.Inventory;
  */
 public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> {
     private static final int W = 320;
-    private static final int H = 314;
+    private static final int H = 340;
 
     // 顶栏
     private static final int TITLE_Y = 12;
@@ -39,9 +39,10 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
     private static final int ROW5 = 178;       // 每秒吸电（实时）
     private static final int ROW6 = 202;       // 每秒供电（实时）
     private static final int ROW7 = 226;       // 玩家供电开关（物品栏 / 饰品栏）
+    private static final int ROW8 = 250;       // 权限（私人 / 队伍 / 公开）
     // ---------- 趋势图区域 ----------
-    private static final int TREND_TITLE_Y = 250;
-    private static final int TREND_Y = 260;
+    private static final int TREND_TITLE_Y = 276;
+    private static final int TREND_Y = 286;
     private static final int TREND_H = 36;
     private static final int TREND_W = W - PANEL_X - 16;
     private static final int BTN_H = 18;
@@ -184,6 +185,11 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
         drawNamedSwitch(graphics, rightEdge - 56, y + ROW7 + 2, 56, BTN_H, "饰品栏",
                 menu.isChargeCurios(), mouseX, mouseY, 7,
                 menu.isChargeCurios() ? "关闭：不给饰品栏物品充电" : "开启：给饰品栏物品充电");
+
+        // ==== 权限（私人 / 队伍 / 公开）====
+        drawRow(graphics, x, y, ROW8, "权限");
+        drawChip(graphics, rightEdge - 76, y + ROW8 + 2, 76, BTN_H,
+                menu.getAccessDisplay(), mouseX, mouseY, 8, "切换权限：私人 / 队伍 / 公开");
 
         // ==== 趋势图（最近吸电/供电每秒趋势）====
         drawTrend(graphics, x, y);
@@ -335,6 +341,8 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
         // 范围
         if (isHover(mx, my, minusX, y + ROW3 + 2, BTN_PM_W, BTN_H)) return press(4);
         if (isHover(mx, my, plusX, y + ROW3 + 2, BTN_PM_W, BTN_H)) return press(3);
+        // 权限
+        if (isHover(mx, my, rightEdge - 76, y + ROW8 + 2, 76, BTN_H)) return press(8);
         // 玩家供电开关
         if (isHover(mx, my, rightEdge - 116, y + ROW7 + 2, 56, BTN_H)) return press(6);
         if (isHover(mx, my, rightEdge - 56, y + ROW7 + 2, 56, BTN_H)) return press(7);
