@@ -240,7 +240,8 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
                 if (be instanceof OmniBatteryBlockEntity) { stickerData.removeSticker(targetPos); continue; }
                 if (!hasAnyEnergyCapability(level, be)) { stickerData.removeSticker(targetPos); continue; }
                 if (sticker != StickerMode.ABSORB && sticker != StickerMode.OVERLOAD) continue;
-                if (!canUseSticker(stickerEntry)) continue;
+                // 吸电不受"公开"放开：只认主人/队友，避免公开模式下吸别人机器的电
+                if (!canAbsorbSticker(stickerEntry)) continue;
                 if (sticker == StickerMode.ABSORB) {
                     // 无限档突破：对同一目标重复传输，直到预算用尽或对方无能量（单次受 int 上限 21 亿限制）
                     int loops = 0;
@@ -925,6 +926,19 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         // 贴纸必须明确归属：无归属（旧存档贴纸）在私人/队伍模式下不放行，
         // 否则任何人的贴纸都会被视为主人所有，导致权限形同虚设。
         return entry.owner() != null && canUsePower(entry.owner());
+    }
+
+    /**
+     * 是否允许本电池从这张贴纸标记的机器**吸电**。
+     * 与供电不同：公开权限**不**放开吸电，否则任何人都能借"公开"把我电池的吸电口对准别人的机器。
+     * 只认主人本人，队伍模式下再放宽到同队成员。
+     */
+    private boolean canAbsorbSticker(StickerSavedData.StickerEntry entry) {
+        if (entry == null || entry.owner() == null) return false;
+        if (ownerUuid == null) return false;
+        if (ownerUuid.equals(entry.owner())) return true;
+        if (access == BatteryAccess.TEAM) return sameTeam(ownerUuid, entry.owner());
+        return false;
     }
 
     /**
