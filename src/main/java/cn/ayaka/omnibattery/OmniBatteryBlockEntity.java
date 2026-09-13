@@ -59,6 +59,10 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
     private final BatteryTier tier;
     private long energy;
     private BatteryMode mode = BatteryMode.BOTH;
+    /** 是否给玩家物品栏（含快捷栏/护甲/副手）内的物品供电。 */
+    private boolean chargeInventory = true;
+    /** 是否给玩家饰品栏（Curios）内的物品供电。 */
+    private boolean chargeCurios = true;
     private int rateIndex;
     private int range;
     private int tickCount;
@@ -612,11 +616,17 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
             if (!isLevelLoaded(playerLevel, player.blockPosition())) continue;
             if (!tier.isUltimate() && !isTargetInRange(player.blockPosition())) continue;
             List<ItemStack> targets = new ArrayList<>();
-            Inventory inv = player.getInventory();
-            targets.addAll(inv.items);
-            targets.addAll(inv.armor);
-            targets.addAll(inv.offhand);
-            addCuriosItemsSoft(player, targets);
+            // 物品栏供电开关（背包类容器物品永不受电，见下方 isBackpackLikeItem）
+            if (chargeInventory) {
+                Inventory inv = player.getInventory();
+                targets.addAll(inv.items);
+                targets.addAll(inv.armor);
+                targets.addAll(inv.offhand);
+            }
+            // 饰品栏供电开关
+            if (chargeCurios) {
+                addCuriosItemsSoft(player, targets);
+            }
             int touched = 0;
             for (ItemStack target : targets) {
                 if (remaining <= 0 || touched++ > MAX_PLAYER_ITEMS_PER_SCAN) break;
@@ -858,6 +868,20 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
     public int getRange() { return range; }
     public long getAbsorbedPerSecond() { return lastAbsorbed; }
     public long getSuppliedPerSecond() { return lastSupplied; }
+    public boolean isChargeInventory() { return chargeInventory; }
+    public boolean isChargeCurios() { return chargeCurios; }
+
+    public void setChargeInventory(boolean v) {
+        chargeInventory = v;
+        setChanged();
+        syncToClients();
+    }
+
+    public void setChargeCurios(boolean v) {
+        chargeCurios = v;
+        setChanged();
+        syncToClients();
+    }
 
     // ---- 趋势图历史（每秒采样一次，环形缓冲）----
 
@@ -966,6 +990,9 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         // 速率统计（供 GUI 显示，BE 更新包同步到客户端）
         tag.putLong("LastAbsorbed", lastAbsorbed);
         tag.putLong("LastSupplied", lastSupplied);
+        // 玩家供电开关
+        tag.putBoolean("ChargeInventory", chargeInventory);
+        tag.putBoolean("ChargeCurios", chargeCurios);
     }
 
     @Override
@@ -979,6 +1006,8 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         range = tag.contains("Range") ? tag.getInt("Range") : tier.defaultRange();
         lastAbsorbed = tag.getLong("LastAbsorbed");
         lastSupplied = tag.getLong("LastSupplied");
+        chargeInventory = !tag.contains("ChargeInventory") || tag.getBoolean("ChargeInventory");
+        chargeCurios = !tag.contains("ChargeCurios") || tag.getBoolean("ChargeCurios");
     }
 
     // ------------------------------------------------------------ 鍐呴儴宸ュ叿

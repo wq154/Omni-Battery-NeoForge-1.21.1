@@ -21,7 +21,7 @@ public class OmniBatteryMenu extends AbstractContainerMenu {
     public OmniBatteryMenu(int id, Inventory inv, OmniBatteryBlockEntity be) {
         super(ModMenuTypes.OMNI_BATTERY.get(), id);
         this.blockEntity = be;
-        this.data = new SimpleContainerData(12 + OmniBatteryBlockEntity.HISTORY_SIZE * 4);
+        this.data = new SimpleContainerData(14 + OmniBatteryBlockEntity.HISTORY_SIZE * 4);
         addDataSlots(data);
     }
 
@@ -57,10 +57,12 @@ public class OmniBatteryMenu extends AbstractContainerMenu {
             // 之前的 bug：syncLong(9, supplied) 会覆盖 syncLong(8, absorbed) 的 slot 9
             syncLong(8, blockEntity.getAbsorbedPerSecond());   // slot 8-9
             syncLong(10, blockEntity.getSuppliedPerSecond());  // slot 10-11
+            data.set(12, blockEntity.isChargeInventory() ? 1 : 0);
+            data.set(13, blockEntity.isChargeCurios() ? 1 : 0);
             // 趋势图历史：每点 4 个 int slot（absorb long + supply long）
             for (int i = 0; i < OmniBatteryBlockEntity.HISTORY_SIZE; i++) {
-                syncLong(12 + i * 4, blockEntity.getAbsorbHistory(i));
-                syncLong(12 + i * 4 + 2, blockEntity.getSupplyHistory(i));
+                syncLong(14 + i * 4, blockEntity.getAbsorbHistory(i));
+                syncLong(14 + i * 4 + 2, blockEntity.getSupplyHistory(i));
             }
         }
         super.broadcastChanges();
@@ -84,6 +86,8 @@ public class OmniBatteryMenu extends AbstractContainerMenu {
             case 2 -> blockEntity.setRateIndex(Math.max(0, blockEntity.getRateIndex() - 1));
             case 3 -> blockEntity.setRange(cycleRange(blockEntity.getRange(), blockEntity.getTier(), true));
             case 4 -> blockEntity.setRange(cycleRange(blockEntity.getRange(), blockEntity.getTier(), false));
+            case 6 -> blockEntity.setChargeInventory(!blockEntity.isChargeInventory());
+            case 7 -> blockEntity.setChargeCurios(!blockEntity.isChargeCurios());
             default -> {
                 return false;
             }
@@ -125,8 +129,10 @@ public class OmniBatteryMenu extends AbstractContainerMenu {
 
     // ---------------- 趋势图历史（客户端从 data slot 读取） ----------------
     public int getHistorySize() { return OmniBatteryBlockEntity.HISTORY_SIZE; }
-    public long getAbsorbHistory(int i) { return readLong(12 + i * 4); }
-    public long getSupplyHistory(int i) { return readLong(12 + i * 4 + 2); }
+    public long getAbsorbHistory(int i) { return readLong(14 + i * 4); }
+    public long getSupplyHistory(int i) { return readLong(14 + i * 4 + 2); }
+    public boolean isChargeInventory() { return data.get(12) != 0; }
+    public boolean isChargeCurios() { return data.get(13) != 0; }
     public BatteryTier getTier() {
         return BatteryTier.values()[Math.max(0, Math.min(data.get(4), BatteryTier.values().length - 1))];
     }

@@ -19,7 +19,7 @@ import net.minecraft.world.entity.player.Inventory;
  */
 public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> {
     private static final int W = 320;
-    private static final int H = 290;
+    private static final int H = 314;
 
     // 顶栏
     private static final int TITLE_Y = 12;
@@ -38,9 +38,10 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
     private static final int ROW4 = 154;       // 范围显示
     private static final int ROW5 = 178;       // 每秒吸电（实时）
     private static final int ROW6 = 202;       // 每秒供电（实时）
+    private static final int ROW7 = 226;       // 玩家供电开关（物品栏 / 饰品栏）
     // ---------- 趋势图区域 ----------
-    private static final int TREND_TITLE_Y = 224;
-    private static final int TREND_Y = 234;
+    private static final int TREND_TITLE_Y = 250;
+    private static final int TREND_Y = 260;
     private static final int TREND_H = 36;
     private static final int TREND_W = W - PANEL_X - 16;
     private static final int BTN_H = 18;
@@ -175,6 +176,15 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
         graphics.drawString(font, supStr,
                 x + PANEL_X + 40, y + ROW6 + 5, supColor, false);
 
+        // ==== 玩家供电开关（物品栏 / 饰品栏）====
+        drawRow(graphics, x, y, ROW7, "玩家供电");
+        drawNamedSwitch(graphics, rightEdge - 116, y + ROW7 + 2, 56, BTN_H, "物品栏",
+                menu.isChargeInventory(), mouseX, mouseY, 6,
+                menu.isChargeInventory() ? "关闭：不给物品栏物品充电" : "开启：给物品栏物品充电");
+        drawNamedSwitch(graphics, rightEdge - 56, y + ROW7 + 2, 56, BTN_H, "饰品栏",
+                menu.isChargeCurios(), mouseX, mouseY, 7,
+                menu.isChargeCurios() ? "关闭：不给饰品栏物品充电" : "开启：给饰品栏物品充电");
+
         // ==== 趋势图（最近吸电/供电每秒趋势）====
         drawTrend(graphics, x, y);
 
@@ -271,6 +281,18 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
         return hover;
     }
 
+    /** 带名称标签的开关（绿色=开，红色=关）。 */
+    private void drawNamedSwitch(GuiGraphics graphics, int bx, int by, int bw, int bh,
+                                 String name, boolean on, int mouseX, int mouseY, int id, String hintText) {
+        boolean hover = isHover(mouseX, mouseY, bx, by, bw, bh);
+        if (hover) hint = hintText;
+        graphics.fill(bx, by, bx + bw, by + bh, 0xFF05070A);
+        graphics.fill(bx + 1, by + 1, bx + bw - 1, by + bh - 1, on ? 0xFF1E3A24 : 0xFF33202A);
+        int textColor = hover ? (on ? 0xFFB6FFC4 : 0xFFFFB0B0) : (on ? 0xFF7DFF99 : 0xFFFF8A8A);
+        int tw = font.width(name);
+        graphics.drawString(font, name, bx + (bw - tw) / 2, by + (bh - 8) / 2, textColor, false);
+    }
+
     private boolean drawSwitch(GuiGraphics graphics, int bx, int by, int bw, int bh, boolean on,
                                int mouseX, int mouseY, int id, String hintText) {
         boolean hover = isHover(mouseX, mouseY, bx, by, bw, bh);
@@ -313,6 +335,9 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
         // 范围
         if (isHover(mx, my, minusX, y + ROW3 + 2, BTN_PM_W, BTN_H)) return press(4);
         if (isHover(mx, my, plusX, y + ROW3 + 2, BTN_PM_W, BTN_H)) return press(3);
+        // 玩家供电开关
+        if (isHover(mx, my, rightEdge - 116, y + ROW7 + 2, 56, BTN_H)) return press(6);
+        if (isHover(mx, my, rightEdge - 56, y + ROW7 + 2, 56, BTN_H)) return press(7);
         // 范围显示
         if (isHover(mx, my, rightEdge - 44, y + ROW4 + 2, 44, BTN_H)) {
             pressedId = 5;
