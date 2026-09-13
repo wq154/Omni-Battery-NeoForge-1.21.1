@@ -53,6 +53,8 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
     private static final int MAX_PLAYER_ITEMS_PER_SCAN = 128;
     private static final int ULTIMATE_FALLBACK_CHUNK_RADIUS = 32;
     private static final int MAX_TRANSFER_LOOPS_PER_SIDE = 32768;
+    /** 单个目标每 tick 的最大重复传输次数（用于无限档突破单次 int 上限 21 亿）。 */
+    private static final int MAX_LOOPS_PER_TARGET = 256;
 
     private final BatteryTier tier;
     private long energy;
@@ -60,6 +62,19 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
     private int rateIndex;
     private int range;
     private int tickCount;
+
+    // ---- 实时速率统计（每 20 tick = 1 秒归零并冻结一次，供 GUI 显示）----
+    private long absorbedThisSecond;
+    private long suppliedThisSecond;
+    private long lastAbsorbed;
+    private long lastSupplied;
+    private int secondTick;
+
+    // ---- 趋势图历史（每秒采样一次，环形缓冲 60 点 = 最近 60 秒）----
+    public static final int HISTORY_SIZE = 60;
+    private final long[] absorbHistory = new long[HISTORY_SIZE];
+    private final long[] supplyHistory = new long[HISTORY_SIZE];
+    private int historyIndex;
 
     private final IEnergyStorage energyStorage = new IEnergyStorage() {
         @Override
@@ -159,25 +174,51 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
 
     public static void tick(Level level, BlockPos pos, BlockState state, OmniBatteryBlockEntity be) {
         if (level.isClientSide) return;
-        be.tickCount++;
-        if (be.mode == BatteryMode.OFF) return;
         ServerLevel serverLevel = (ServerLevel) level;
-        int rate = be.tier.rate(be.rateIndex);
-        if (be.mode.canAbsorb()) be.absorbFromLoadedDimensions(serverLevel, rate);
+        be.tickCount++;
+        be.secondTick++;
+        if (be.secondTick >= 20) {
+            // 每秒（20 tick）结算一次：把当前秒的累计值转为 last*（供 GUI 显示），并清零
+            be.lastAbsorbed = be.absorbedThisSecond;
+            be.lastSupplied = be.suppliedThisSecond;
+            // 记录趋势图采样点
+            be.recordHistory(be.lastAbsorbed, be.lastSupplied);
+            be.absorbedThisSecond = 0;
+            be.suppliedThisSecond = 0;
+            be.secondTick = 0;
+            be.syncToClients();   // 同步 BE 本体（NBT 含 LastAbsorbed/LastSupplied）
+            // 关键：同步 Menu 的 data slots（GUI 显示源），否则客户端读不到新速率
+            be.broadcastMenuChangesIfOpen(serverLevel);
+        }
+        if (be.mode == BatteryMode.OFF) return;
+        // 速率可能是 long（ULTIMATE 无限档 = Long.MAX_VALUE，突破 int 上限 21 亿）
+        long rate = be.tier.rate(be.rateIndex);
+        // 吸电与供电各自独立使用完整 rate 预算，互不计算（用户要求）
+        if (be.mode.canAbsorb()) {
+            long absorbed = be.absorbFromLoadedDimensions(serverLevel, rate);
+            be.absorbedThisSecond += absorbed;
+        }
         if (be.mode.canCharge()) {
-            be.supplyToLoadedDimensions(serverLevel, rate);
-            be.chargePlayersInLoadedDimensions(serverLevel, rate);
+            // 机器供电与玩家物品充电共享 rate 预算（合计不超过 rate，符合速率设置）
+            long remaining = rate;
+            long machineSupplied = be.supplyToLoadedDimensions(serverLevel, remaining);
+            remaining -= machineSupplied;
+            long playerSupplied = 0;
+            if (remaining > 0) {
+                playerSupplied = be.chargePlayersInLoadedDimensions(serverLevel, remaining);
+            }
+            be.suppliedThisSecond += machineSupplied + playerSupplied;
         }
         be.updateChargeState();
     }
 
-    // ------------------------------------------------------------ 鍚稿彇锛堟満鍣?-> 鐢垫睜锛?
+    // ------------------------------------------------------------ 吸收（机器 -> 电池）
 
-    private void absorbFromLoadedDimensions(ServerLevel originLevel, int budget) {
+    private long absorbFromLoadedDimensions(ServerLevel originLevel, long budget) {
         long space = tier.capacity() - energy;
-        int remaining = BatteryData.clampToForgeInt(Math.min(budget, space));
-        if (remaining <= 0) return;
-        int start = remaining;
+        long remaining = Math.min(budget, space);
+        if (remaining <= 0) return 0;
+        long start = remaining;
         for (ServerLevel level : originLevel.getServer().getAllLevels()) {
             StickerSavedData stickerData = StickerSavedData.get(level);
             for (BlockPos targetPos : getLoadedBlockEntityPositions(level)) {
@@ -191,25 +232,39 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
                 if (!hasAnyEnergyCapability(level, be)) { stickerData.removeSticker(targetPos); continue; }
                 if (sticker != StickerMode.ABSORB && sticker != StickerMode.OVERLOAD) continue;
                 if (sticker == StickerMode.ABSORB) {
-                    remaining -= tryAbsorbFromFirstSide(level, be, remaining, sticker);
+                    // 无限档突破：对同一目标重复传输，直到预算用尽或对方无能量（单次受 int 上限 21 亿限制）
+                    int loops = 0;
+                    while (remaining > 0 && loops++ < MAX_LOOPS_PER_TARGET) {
+                        int c = (int) Math.min(remaining, Integer.MAX_VALUE);
+                        int moved = tryAbsorbFromFirstSide(level, be, c, sticker);
+                        if (moved <= 0) break;
+                        remaining -= moved;
+                    }
                     continue;
                 }
                 for (Direction dir : DIR_SIDES) {
                     if (remaining <= 0) break;
-                    remaining -= tryAbsorbFrom(level, be, dir, remaining, sticker);
+                    int loops = 0;
+                    while (remaining > 0 && loops++ < MAX_LOOPS_PER_TARGET) {
+                        int c = (int) Math.min(remaining, Integer.MAX_VALUE);
+                        int moved = tryAbsorbFrom(level, be, dir, c, sticker);
+                        if (moved <= 0) break;
+                        remaining -= moved;
+                    }
                 }
             }
             if (remaining <= 0) break;
         }
         if (remaining < start) setChanged();
+        return start - remaining;
     }
 
-    // ------------------------------------------------------------ 渚涚數锛堢數姹?-> 鏈哄櫒锛?
+    // ------------------------------------------------------------ 供电（电池 -> 机器）
 
-    private void supplyToLoadedDimensions(ServerLevel originLevel, int budget) {
-        int remaining = BatteryData.clampToForgeInt(Math.min(budget, energy));
-        if (remaining <= 0) return;
-        int start = remaining;
+    private long supplyToLoadedDimensions(ServerLevel originLevel, long budget) {
+        long remaining = Math.min(budget, energy);
+        if (remaining <= 0) return 0;
+        long start = remaining;
         for (ServerLevel level : originLevel.getServer().getAllLevels()) {
             StickerSavedData stickerData = StickerSavedData.get(level);
             for (BlockPos targetPos : getLoadedBlockEntityPositions(level)) {
@@ -223,17 +278,31 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
                 if (!hasAnyEnergyCapability(level, be)) { stickerData.removeSticker(targetPos); continue; }
                 if (sticker != StickerMode.SUPPLY && sticker != StickerMode.OVERLOAD) continue;
                 if (sticker == StickerMode.SUPPLY) {
-                    remaining -= trySupplyToFirstSide(level, be, remaining, sticker);
+                    // 无限档突破：对同一目标重复传输，直到预算用尽或对方已满（单次受 int 上限 21 亿限制）
+                    int loops = 0;
+                    while (remaining > 0 && loops++ < MAX_LOOPS_PER_TARGET) {
+                        int c = (int) Math.min(remaining, Integer.MAX_VALUE);
+                        int moved = trySupplyToFirstSide(level, be, c, sticker);
+                        if (moved <= 0) break;
+                        remaining -= moved;
+                    }
                     continue;
                 }
                 for (Direction dir : DIR_SIDES) {
                     if (remaining <= 0) break;
-                    remaining -= trySupplyTo(level, be, dir, remaining, sticker);
+                    int loops = 0;
+                    while (remaining > 0 && loops++ < MAX_LOOPS_PER_TARGET) {
+                        int c = (int) Math.min(remaining, Integer.MAX_VALUE);
+                        int moved = trySupplyTo(level, be, dir, c, sticker);
+                        if (moved <= 0) break;
+                        remaining -= moved;
+                    }
                 }
             }
             if (remaining <= 0) break;
         }
         if (remaining < start) setChanged();
+        return start - remaining;
     }
 
     private boolean hasAnyEnergyCapability(Level level, BlockEntity be) {
@@ -532,10 +601,10 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
 
     // ------------------------------------------------------------ 鐜╁闅忚韩鐗╁搧鍏呯數
 
-    private void chargePlayersInLoadedDimensions(ServerLevel originLevel, int budget) {
-        int remaining = BatteryData.clampToForgeInt(Math.min(budget, energy));
-        if (remaining <= 0) return;
-        int start = remaining;
+    private long chargePlayersInLoadedDimensions(ServerLevel originLevel, long budget) {
+        long remaining = Math.min(budget, energy);
+        if (remaining <= 0) return 0;
+        long start = remaining;
         for (ServerPlayer player : originLevel.getServer().getPlayerList().getPlayers()) {
             if (remaining <= 0) break;
             Level level = player.level();
@@ -553,10 +622,12 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
                 if (remaining <= 0 || touched++ > MAX_PLAYER_ITEMS_PER_SCAN) break;
                 if (target.isEmpty() || target.getItem() instanceof OmniBatteryItem) continue;
                 if (isBackpackLikeItem(target)) continue;
-                remaining -= moveEnergyToPlayerItem(target, remaining);
+                int chunk = (int) Math.min(remaining, Integer.MAX_VALUE);
+                remaining -= moveEnergyToPlayerItem(target, chunk);
             }
         }
         if (remaining < start) setChanged();
+        return start - remaining;
     }
 
     private static boolean isBackpackLikeItem(ItemStack stack) {
@@ -785,6 +856,33 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
     public BatteryMode getMode() { return mode; }
     public int getRateIndex() { return rateIndex; }
     public int getRange() { return range; }
+    public long getAbsorbedPerSecond() { return lastAbsorbed; }
+    public long getSuppliedPerSecond() { return lastSupplied; }
+
+    // ---- 趋势图历史（每秒采样一次，环形缓冲）----
+
+    /** 记录趋势图采样点（每秒一次）。 */
+    public void recordHistory(long absorbed, long supplied) {
+        absorbHistory[historyIndex] = absorbed;
+        supplyHistory[historyIndex] = supplied;
+        historyIndex = (historyIndex + 1) % HISTORY_SIZE;
+    }
+
+    /** 按时间顺序（旧->新）读取历史吸电值。 */
+    public long getAbsorbHistory(int i) {
+        int idx = (historyIndex + i) % HISTORY_SIZE;
+        if (idx < 0) idx += HISTORY_SIZE;
+        return absorbHistory[idx];
+    }
+
+    /** 按时间顺序（旧->新）读取历史供电值。 */
+    public long getSupplyHistory(int i) {
+        int idx = (historyIndex + i) % HISTORY_SIZE;
+        if (idx < 0) idx += HISTORY_SIZE;
+        return supplyHistory[idx];
+    }
+
+    public int getHistorySize() { return HISTORY_SIZE; }
 
     public void setEnergy(long e) {
         energy = Math.max(0L, Math.min(tier.capacity(), e));
@@ -841,6 +939,21 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
             }
         }
     }
+
+    /**
+     * 主动推送 Menu data slots 给正在查看该菜单的附近玩家。
+     * 用途：BE 每秒结算吸电/供电速率后，让客户端 GUI 立刻看到新值（不必等下次点击按钮）。
+     * 注意：打开 OMNI_BATTERY 菜单的 BE 必然是当前 BE（不会混），所以无需校验 menu 的 BE 引用。
+     */
+    public void broadcastMenuChangesIfOpen(net.minecraft.server.level.ServerLevel serverLevel) {
+        long reachSq = 256L * 256L;
+        for (net.minecraft.server.level.ServerPlayer sp : serverLevel.players()) {
+            if (sp.blockPosition().distSqr(worldPosition) > reachSq) continue;
+            if (sp.containerMenu instanceof OmniBatteryMenu menu) {
+                menu.broadcastChanges();
+            }
+        }
+    }
     // ------------------------------------------------------------ 瀛樻。
 
     @Override
@@ -850,6 +963,9 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         tag.putInt("Mode", mode.ordinal());
         tag.putInt("RateIndex", rateIndex);
         tag.putInt("Range", range);
+        // 速率统计（供 GUI 显示，BE 更新包同步到客户端）
+        tag.putLong("LastAbsorbed", lastAbsorbed);
+        tag.putLong("LastSupplied", lastSupplied);
     }
 
     @Override
@@ -861,6 +977,8 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         mode = mi >= 0 && mi < modes.length ? modes[mi] : BatteryMode.BOTH;
         rateIndex = Math.max(0, Math.min(4, tag.getInt("RateIndex")));
         range = tag.contains("Range") ? tag.getInt("Range") : tier.defaultRange();
+        lastAbsorbed = tag.getLong("LastAbsorbed");
+        lastSupplied = tag.getLong("LastSupplied");
     }
 
     // ------------------------------------------------------------ 鍐呴儴宸ュ叿

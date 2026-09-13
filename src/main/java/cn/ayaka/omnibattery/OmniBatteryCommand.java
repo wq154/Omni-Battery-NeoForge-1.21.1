@@ -125,7 +125,7 @@ public final class OmniBatteryCommand {
         if (stack.isEmpty()) return 0;
         BatteryData.setRateIndex(stack, level - 1);
         BatteryTier tier = ((OmniBatteryItem) stack.getItem()).getTier();
-        int rate = tier.rate(level - 1);
+        long rate = tier.rate(level - 1);
         source.sendSuccess(() -> Component.translatable("message.omnibattery.rate", String.valueOf(rate))
                 .withStyle(ChatFormatting.GREEN), false);
         return 1;

@@ -18,8 +18,8 @@ import net.minecraft.world.entity.player.Inventory;
  * 与左侧标签的最小间距 24px，杜绝重叠。
  */
 public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> {
-    private static final int W = 220;
-    private static final int H = 196;
+    private static final int W = 320;
+    private static final int H = 290;
 
     // 顶栏
     private static final int TITLE_Y = 12;
@@ -36,6 +36,13 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
     private static final int ROW2 = 106;       // 速率
     private static final int ROW3 = 130;       // 范围
     private static final int ROW4 = 154;       // 范围显示
+    private static final int ROW5 = 178;       // 每秒吸电（实时）
+    private static final int ROW6 = 202;       // 每秒供电（实时）
+    // ---------- 趋势图区域 ----------
+    private static final int TREND_TITLE_Y = 224;
+    private static final int TREND_Y = 234;
+    private static final int TREND_H = 36;
+    private static final int TREND_W = W - PANEL_X - 16;
     private static final int BTN_H = 18;
 
     // 按钮位置 (相对面板)
@@ -91,8 +98,13 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
         graphics.drawString(font, tierName, x + W - 8 - badgeW + 6, y + TITLE_Y, 0xFF202020, false);
 
         // ==== 信息栏 - 左侧圆形能量表 ====
+        boolean isUltimate = menu.getTier() == cn.ayaka.omnibattery.BatteryTier.ULTIMATE;
+        // 终极电池容量无限，百分比无意义 -> 显示电量简写（K/M/B/T + 两位小数 + FE），不画扇形
+        String gaugeCenter = isUltimate
+                ? OmniBatteryMenu.fmtShort(menu.getEnergy()) + " FE"
+                : String.format("%.2f%%", menu.getEnergyRatio() * 100.0f);
         drawCircularGauge(graphics, x + GAUGE_CX, y + GAUGE_CY, GAUGE_R,
-                (float) menu.getEnergyRatio(), dark, mid, bright);
+                (float) menu.getEnergyRatio(), dark, mid, bright, gaugeCenter, isUltimate);
 
         // ==== 信息栏 - 右侧文字（浅灰底上用深色，保证对比度）====
         int infoX = x + PANEL_X;
@@ -141,20 +153,45 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
         boolean on = RangeOverlay.isVisible();
         int togBtnX = rightEdge - 44;
         drawSwitch(graphics, togBtnX, y + ROW4 + 2, 44, BTN_H, on, mouseX, mouseY, 5,
-                on ? "\u5173\u95ed\u8303\u56f4\u663e\u793a" : "\u6253\u5f00\u8303\u56f4\u663e\u793a");
+                on ? "关闭范围显示" : "打开范围显示");
+
+        // ==== 实时速率（只显示，无按钮）====
+        // 吸电（机器 → 电池）
+        drawRow(graphics, x, y, ROW5, "吸电");
+        long absorbed = menu.getAbsorbedPerSecond();
+        // /s 数值 = 每 tick 速率 × 20，直接除回 /t 与"速率"设置同单位
+        long absorbedPerTick = absorbed / 20;
+        String absStr = OmniBatteryMenu.fmt(absorbedPerTick) + " FE/t";
+        int absColor = absorbed > 0 ? 0xFFFFA640 : 0xFF6E7076;
+        graphics.drawString(font, absStr,
+                x + PANEL_X + 40, y + ROW5 + 5, absColor, false);
+
+        // 供电（电池 → 机器）
+        drawRow(graphics, x, y, ROW6, "供电");
+        long supplied = menu.getSuppliedPerSecond();
+        long suppliedPerTick = supplied / 20;
+        String supStr = OmniBatteryMenu.fmt(suppliedPerTick) + " FE/t";
+        int supColor = supplied > 0 ? 0xFF6AE8E0 : 0xFF6E7076;
+        graphics.drawString(font, supStr,
+                x + PANEL_X + 40, y + ROW6 + 5, supColor, false);
+
+        // ==== 趋势图（最近吸电/供电每秒趋势）====
+        drawTrend(graphics, x, y);
 
         // ==== 底部提示（vanilla 灰）====
         graphics.fill(x + 4, y + H - 18, x + W - 4, y + H - 4, 0xFF8B8B8B);
         graphics.fill(x + 5, y + H - 17, x + W - 5, y + H - 5, 0xFF373737);
         String footer = hint != null
-                ? "\u25b6 " + hint
-                : "\u63d0\u793a\uff1a\u53f3\u952e\u65b9\u5757\u53ef\u8bbe\u7f6e\uff0c\u5de6\u952e\u7834\u574f";
+                ? "▶ " + hint
+                : "提示：右键方块可设置，左键破坏";
         graphics.drawString(font, footer, x + 10, y + H - 14, hint != null ? 0xFFFFE9A8 : 0xFFC8C8C8, false);
     }
 
-    /** 圆形能量表：外圈刻度环 + 内部扇形填充 + 中央百分比。 */
+    /** 圆形能量表：外圈刻度环 + 内部扇形填充 + 中央文字。
+     *  ultimateMode=true 时不画扇形（终极容量无限，扇形无意义），只显示中心电量。 */
     private void drawCircularGauge(GuiGraphics graphics, int cx, int cy, int r,
-                                   float ratio, int dark, int mid, int bright) {
+                                   float ratio, int dark, int mid, int bright,
+                                   String centerText, boolean ultimateMode) {
         // 底盘
         for (int dy = -r - 2; dy <= r + 2; dy++) {
             for (int dx = -r - 2; dx <= r + 2; dx++) {
@@ -176,26 +213,27 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
                 }
             }
         }
-        // 扇形填充（从正下方顺时针）
-        double filled = ratio * Math.PI * 2;
-        for (int dy = -r + 4; dy <= r - 4; dy++) {
-            for (int dx = -r + 4; dx <= r - 4; dx++) {
-                int d2 = dx * dx + dy * dy;
-                int inner = (r - 8) * (r - 8);
-                int outer = (r - 4) * (r - 4);
-                if (d2 <= inner || d2 > outer) continue;
-                double ang = Math.atan2(dx, -dy);  // 0 = 上, 顺时针
-                if (ang < 0) ang += Math.PI * 2;
-                if (ang <= filled) {
-                    int c = ratio > 0.66f ? bright : (ratio > 0.33f ? mid : dark);
-                    graphics.fill(cx + dx, cy + dy, cx + dx + 1, cy + dy + 1, c);
+        // 扇形填充（终极电池不画，容量无限）
+        if (!ultimateMode) {
+            double filled = ratio * Math.PI * 2;
+            for (int dy = -r + 4; dy <= r - 4; dy++) {
+                for (int dx = -r + 4; dx <= r - 4; dx++) {
+                    int d2 = dx * dx + dy * dy;
+                    int inner = (r - 8) * (r - 8);
+                    int outer = (r - 4) * (r - 4);
+                    if (d2 <= inner || d2 > outer) continue;
+                    double ang = Math.atan2(dx, -dy);  // 0 = 上, 顺时针
+                    if (ang < 0) ang += Math.PI * 2;
+                    if (ang <= filled) {
+                        int c = ratio > 0.66f ? bright : (ratio > 0.33f ? mid : dark);
+                        graphics.fill(cx + dx, cy + dy, cx + dx + 1, cy + dy + 1, c);
+                    }
                 }
             }
         }
         // 中央文字
-        String pct = Math.round(ratio * 100) + "%";
-        int tw = font.width(pct);
-        graphics.drawString(font, pct, cx - tw / 2, cy - 4, 0xFFFFFFFF, true);
+        int tw = font.width(centerText);
+        graphics.drawString(font, centerText, cx - tw / 2, cy - 4, 0xFFFFFFFF, true);
     }
 
     private void drawRow(GuiGraphics graphics, int x, int y, int rowY, String label) {
@@ -311,6 +349,71 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
     //   ADVANCED = 银     accent = 青绿
     //   ELITE    = 金     accent = 亮黄
     //   ULTIMATE = 钛紫   accent = 紫
+
+    // ---------------- 趋势图 ----------------
+
+    /** 绘制最近 60 秒的吸电/供电每秒趋势线。 */
+    private void drawTrend(GuiGraphics graphics, int x, int y) {
+        int ty = y + TREND_Y;
+        int tw = TREND_W;
+        // 标题 + 反例
+        graphics.drawString(font, "每秒趋势", x + PANEL_X, y + TREND_TITLE_Y, 0xFFC0C4CC, false);
+        graphics.fill(x + PANEL_X + 54, y + TREND_TITLE_Y + 1, x + PANEL_X + 58, y + TREND_TITLE_Y + 5, 0xFFFFA640);
+        graphics.drawString(font, "吸电", x + PANEL_X + 60, y + TREND_TITLE_Y, 0xFFFFA640, false);
+        graphics.fill(x + PANEL_X + 82, y + TREND_TITLE_Y + 1, x + PANEL_X + 86, y + TREND_TITLE_Y + 5, 0xFF6AE8E0);
+        graphics.drawString(font, "供电", x + PANEL_X + 88, y + TREND_TITLE_Y, 0xFF6AE8E0, false);
+
+        // 背景深坑
+        graphics.fill(x + PANEL_X, ty, x + PANEL_X + tw, ty + TREND_H, 0xFF0A0C12);
+        graphics.fill(x + PANEL_X + 1, ty + 1, x + PANEL_X + tw - 1, ty + TREND_H - 1, 0xFF161B24);
+
+        int size = menu.getHistorySize();
+        if (size <= 0) return;
+
+        // 找最大值作为统一缩放边界
+        long maxV = 0;
+        for (int i = 0; i < size; i++) {
+            maxV = Math.max(maxV, menu.getAbsorbHistory(i));
+            maxV = Math.max(maxV, menu.getSupplyHistory(i));
+        }
+        if (maxV <= 0) maxV = 1;
+
+        int plotX0 = x + PANEL_X + 3;
+        int plotY0 = ty + 3;
+        int plotW = tw - 6;
+        int plotH = TREND_H - 6;
+
+        // 吸电线（橙）
+        for (int i = 0; i < size - 1; i++) {
+            int px1 = plotX0 + (int) ((long) i * plotW / (size - 1));
+            int px2 = plotX0 + (int) ((long) (i + 1) * plotW / (size - 1));
+            int py1 = plotY0 + plotH - (int) (menu.getAbsorbHistory(i) * plotH / maxV);
+            int py2 = plotY0 + plotH - (int) (menu.getAbsorbHistory(i + 1) * plotH / maxV);
+            drawLine(graphics, px1, py1, px2, py2, 0xFFFFA640);
+        }
+        // 供电线（静）
+        for (int i = 0; i < size - 1; i++) {
+            int px1 = plotX0 + (int) ((long) i * plotW / (size - 1));
+            int px2 = plotX0 + (int) ((long) (i + 1) * plotW / (size - 1));
+            int py1 = plotY0 + plotH - (int) (menu.getSupplyHistory(i) * plotH / maxV);
+            int py2 = plotY0 + plotH - (int) (menu.getSupplyHistory(i + 1) * plotH / maxV);
+            drawLine(graphics, px1, py1, px2, py2, 0xFF6AE8E0);
+        }
+    }
+
+    private void drawLine(GuiGraphics graphics, int x1, int y1, int x2, int y2, int color) {
+        int dx = Math.abs(x2 - x1), dy = Math.abs(y2 - y1);
+        int sx = x1 < x2 ? 1 : -1, sy = y1 < y2 ? 1 : -1;
+        int err = dx - dy;
+        int guard = 0;
+        while (guard++ < 10000) {
+            graphics.fill(x1, y1, x1 + 1, y1 + 1, color);
+            if (x1 == x2 && y1 == y2) break;
+            int e2 = 2 * err;
+            if (e2 > -dy) { err -= dy; x1 += sx; }
+            if (e2 < dx) { err += dx; y1 += sy; }
+        }
+    }
 
     private int tierDark() {
         return switch (menu.getTier()) {

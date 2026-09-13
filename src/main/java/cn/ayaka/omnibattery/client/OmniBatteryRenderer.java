@@ -45,7 +45,12 @@ public class OmniBatteryRenderer implements BlockEntityRenderer<OmniBatteryBlock
         long energy = be.getEnergy();
         long capacity = be.getTier().capacity();
         double ratio = capacity <= 0 ? 0.0 : Mth.clamp(energy / (double) capacity, 0.0, 1.0);
+        boolean isUltimate = be.getTier().isUltimate();
         int percent = (int) Math.round(ratio * 100.0);
+        // 终极电池容量无限，百分比无意义 -> 方块表面显示电量简写（K/M/B/T + 两位小数 + FE）
+        String percentStr = isUltimate
+                ? cn.ayaka.omnibattery.OmniBatteryMenu.fmtShort(energy) + " FE"
+                : (percent + "%");
 
         // 充电检测（客户端缓存）
         BlockPos pos = be.getBlockPos();
@@ -66,7 +71,7 @@ public class OmniBatteryRenderer implements BlockEntityRenderer<OmniBatteryBlock
         }
 
         int color = charging ? 0xFF35DD55 : colorFor(percent);
-        String text = charging ? "\u26A1 " + percent + "%" : percent + "%";
+        String text = charging ? "\u26A1 " + percentStr : percentStr;
 
         // 在方块四个侧面各绘制一次（面向玩家的那面才看得见，其它面被遮挡）
         for (Direction dir : new Direction[]{Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST}) {

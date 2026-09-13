@@ -38,3 +38,7 @@ out/
 .DS_Store
 Thumbs.db
 *.tmp
+
+# stray build artifacts at repo root (use Release assets instead)
+/*.jar
+
