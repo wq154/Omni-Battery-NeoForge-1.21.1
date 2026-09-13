@@ -19,30 +19,33 @@ import net.minecraft.world.entity.player.Inventory;
  */
 public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> {
     private static final int W = 320;
-    private static final int H = 298;
+    private static final int H = 272;
 
     // 顶栏
     private static final int TITLE_Y = 12;
 
-    // 信息栏
-    private static final int GAUGE_CX = 30;    // 圆表中心 x
-    private static final int GAUGE_CY = 56;    // 圆表中心 y
-    private static final int GAUGE_R = 20;     // 圆表半径
+    // 信息栏：文字在左，圆形能量表在右
+    private static final int INFO_X = 18;                  // 信息文字左界（与行标签左对齐）
+    private static final int INFO_Y = 34;                  // 信息文字起始 y（行距 11）
+    private static final int GAUGE_R = 16;                 // 圆表半径
+    private static final int GAUGE_CX = W - 12 - GAUGE_R;  // 圆表中心 x（靠右）
+    private static final int GAUGE_CY = 50;                // 圆表中心 y
 
-    // 控制栏 - 每行 22px 高，从 y=82 开始
-    private static final int PANEL_X = 66;     // 面板左边界，圆表右侧
+    // 控制栏 - 每行 20px 高
+    private static final int ROW_H = 20;       // 行高
+    private static final int PANEL_X = 12;     // 面板左边界（与信息文字同界）
     private static final int PANEL_W = W - PANEL_X - 8;
-    private static final int ROW1 = 78;        // 模式
-    private static final int ROW2 = 100;       // 速率
-    private static final int ROW3 = 122;       // 范围
-    private static final int ROW4 = 144;       // 范围显示
-    private static final int ROW5 = 166;       // 每秒吸电（实时）
-    private static final int ROW6 = 188;       // 每秒供电（实时）
-    private static final int ROW7 = 210;       // 玩家供电开关（物品 / 饰品）+ 权限
+    private static final int ROW1 = 74;        // 模式
+    private static final int ROW2 = 94;        // 速率
+    private static final int ROW3 = 114;       // 范围
+    private static final int ROW4 = 134;       // 范围显示
+    private static final int ROW5 = 154;       // 每秒吸电（实时）
+    private static final int ROW6 = 174;       // 每秒供电（实时）
+    private static final int ROW7 = 194;       // 玩家供电开关（物品 / 饰品）+ 权限
     // ---------- 趋势图区域 ----------
-    private static final int TREND_TITLE_Y = 232;
-    private static final int TREND_Y = 242;
-    private static final int TREND_H = 36;
+    private static final int TREND_TITLE_Y = 216;
+    private static final int TREND_Y = 224;
+    private static final int TREND_H = 28;
     private static final int TREND_W = W - PANEL_X - 16;
     private static final int BTN_H = 18;
 
@@ -98,7 +101,15 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
         graphics.fill(x + W - 7 - badgeW, y + 9, x + W - 9, y + 21, bright);
         graphics.drawString(font, tierName, x + W - 8 - badgeW + 6, y + TITLE_Y, 0xFF202020, false);
 
-        // ==== 信息栏 - 左侧圆形能量表 ====
+        // ==== 信息栏 - 左侧文字（与下方行标签左对齐）====
+        int infoX = x + INFO_X;
+        graphics.drawString(font, "\u5f53\u524d\u7535\u91cf", infoX, y + INFO_Y, 0xFF404040, false);
+        String energyStr = OmniBatteryMenu.fmt(menu.getEnergy());
+        String maxStr = maxStr();
+        graphics.drawString(font, energyStr + " FE", infoX, y + INFO_Y + 11, 0xFF1E5B26, false);   // 深绿
+        graphics.drawString(font, "/ " + maxStr + " FE", infoX, y + INFO_Y + 22, 0xFF606060, false);
+
+        // ==== 信息栏 - 右侧圆形能量表 ====
         boolean isUltimate = menu.getTier() == cn.ayaka.omnibattery.BatteryTier.ULTIMATE;
         // 终极电池容量无限，百分比无意义 -> 显示电量简写（K/M/B/T + 两位小数 + FE），不画扇形
         String gaugeCenter = isUltimate
@@ -106,14 +117,6 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
                 : String.format("%.2f%%", menu.getEnergyRatio() * 100.0f);
         drawCircularGauge(graphics, x + GAUGE_CX, y + GAUGE_CY, GAUGE_R,
                 (float) menu.getEnergyRatio(), dark, mid, bright, gaugeCenter, isUltimate);
-
-        // ==== 信息栏 - 右侧文字（浅灰底上用深色，保证对比度）====
-        int infoX = x + PANEL_X;
-        graphics.drawString(font, "\u5f53\u524d\u7535\u91cf", infoX, y + 38, 0xFF404040, false);
-        String energyStr = OmniBatteryMenu.fmt(menu.getEnergy());
-        String maxStr = maxStr();
-        graphics.drawString(font, energyStr + " FE", infoX, y + 50, 0xFF1E5B26, false);   // 深绿
-        graphics.drawString(font, "/ " + maxStr + " FE", infoX, y + 62, 0xFF606060, false);
 
         // ==== 控制栏 - 4 行 ====
         drawRow(graphics, x, y, ROW1, "\u6a21\u5f0f");
@@ -124,36 +127,36 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
         // 速率/范围的当前值（放在标签右侧、按钮左侧的中段）
         // 数值在行凹槽（深色 #373737）内，用亮色显示以保证对比度
         graphics.drawString(font, menu.getRateDisplay(),
-                x + PANEL_X + 40, y + ROW2 + 5, 0xFFFFD98A, false);
+                x + PANEL_X + 40, y + ROW2 + 6, 0xFFFFD98A, false);
         graphics.drawString(font, menu.getRangeDisplay(),
-                x + PANEL_X + 40, y + ROW3 + 5, 0xFFAFE0AF, false);
+                x + PANEL_X + 40, y + ROW3 + 6, 0xFFAFE0AF, false);
 
         // ==== 按钮（严格右对齐，杜绝重叠）====
         int rightEdge = x + W - 8;
 
         // 模式：60x18 长按钮，显示当前模式
         int modeBtnX = rightEdge - BTN_MODE_W;
-        drawChip(graphics, modeBtnX, y + ROW1 + 2, BTN_MODE_W, BTN_H,
+        drawChip(graphics, modeBtnX, y + ROW1 + 1, BTN_MODE_W, BTN_H,
                 menu.getMode().display(), mouseX, mouseY, 0, "\u5207\u6362\u6a21\u5f0f");
 
         // 速率 -/+
         int plusX = rightEdge - BTN_PM_W;
         int minusX = plusX - BTN_PM_W - 2;
-        drawChip(graphics, minusX, y + ROW2 + 2, BTN_PM_W, BTN_H, "-",
+        drawChip(graphics, minusX, y + ROW2 + 1, BTN_PM_W, BTN_H, "-",
                 mouseX, mouseY, 2, "\u964d\u4f4e\u901f\u7387");
-        drawChip(graphics, plusX, y + ROW2 + 2, BTN_PM_W, BTN_H, "+",
+        drawChip(graphics, plusX, y + ROW2 + 1, BTN_PM_W, BTN_H, "+",
                 mouseX, mouseY, 1, "\u63d0\u9ad8\u901f\u7387");
 
         // 范围 -/+
-        drawChip(graphics, minusX, y + ROW3 + 2, BTN_PM_W, BTN_H, "-",
+        drawChip(graphics, minusX, y + ROW3 + 1, BTN_PM_W, BTN_H, "-",
                 mouseX, mouseY, 4, "\u7f29\u5c0f\u8303\u56f4");
-        drawChip(graphics, plusX, y + ROW3 + 2, BTN_PM_W, BTN_H, "+",
+        drawChip(graphics, plusX, y + ROW3 + 1, BTN_PM_W, BTN_H, "+",
                 mouseX, mouseY, 3, "\u6269\u5927\u8303\u56f4");
 
         // 范围显示开关
         boolean on = RangeOverlay.isVisible();
         int togBtnX = rightEdge - 44;
-        drawSwitch(graphics, togBtnX, y + ROW4 + 2, 44, BTN_H, on, mouseX, mouseY, 5,
+        drawSwitch(graphics, togBtnX, y + ROW4 + 1, 44, BTN_H, on, mouseX, mouseY, 5,
                 on ? "关闭范围显示" : "打开范围显示");
 
         // ==== 实时速率（只显示，无按钮）====
@@ -165,7 +168,7 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
         String absStr = OmniBatteryMenu.fmt(absorbedPerTick) + " FE/t";
         int absColor = absorbed > 0 ? 0xFFFFA640 : 0xFF6E7076;
         graphics.drawString(font, absStr,
-                x + PANEL_X + 40, y + ROW5 + 5, absColor, false);
+                x + PANEL_X + 40, y + ROW5 + 6, absColor, false);
 
         // 供电（电池 → 机器）
         drawRow(graphics, x, y, ROW6, "供电");
@@ -174,17 +177,17 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
         String supStr = OmniBatteryMenu.fmt(suppliedPerTick) + " FE/t";
         int supColor = supplied > 0 ? 0xFF6AE8E0 : 0xFF6E7076;
         graphics.drawString(font, supStr,
-                x + PANEL_X + 40, y + ROW6 + 5, supColor, false);
+                x + PANEL_X + 40, y + ROW6 + 6, supColor, false);
 
         // ==== 玩家供电开关 + 权限（合并一行）====
         drawRow(graphics, x, y, ROW7, "玩家/权限");
-        drawNamedSwitch(graphics, rightEdge - 156, y + ROW7 + 2, 44, BTN_H, "物品",
+        drawNamedSwitch(graphics, rightEdge - 156, y + ROW7 + 1, 44, BTN_H, "物品",
                 menu.isChargeInventory(), mouseX, mouseY, 6,
                 menu.isChargeInventory() ? "关闭：不给物品栏物品充电" : "开启：给物品栏物品充电");
-        drawNamedSwitch(graphics, rightEdge - 108, y + ROW7 + 2, 44, BTN_H, "饰品",
+        drawNamedSwitch(graphics, rightEdge - 108, y + ROW7 + 1, 44, BTN_H, "饰品",
                 menu.isChargeCurios(), mouseX, mouseY, 7,
                 menu.isChargeCurios() ? "关闭：不给饰品栏物品充电" : "开启：给饰品栏物品充电");
-        drawChip(graphics, rightEdge - 60, y + ROW7 + 2, 60, BTN_H,
+        drawChip(graphics, rightEdge - 60, y + ROW7 + 1, 60, BTN_H,
                 menu.getAccessDisplay(), mouseX, mouseY, 8, "切换权限：私人 / 队伍 / 公开");
 
         // ==== 趋势图（最近吸电/供电每秒趋势）====
@@ -251,11 +254,11 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
     private void drawRow(GuiGraphics graphics, int x, int y, int rowY, String label) {
         int ry = y + rowY;
         // 凹槽（原版 GUI 里 slot 的经典 3-色边）
-        graphics.fill(x + PANEL_X, ry, x + W - 8, ry + 22, 0xFF8B8B8B);
-        graphics.fill(x + PANEL_X + 1, ry + 1, x + W - 9, ry + 21, 0xFF373737);
-        graphics.fill(x + W - 9, ry + 1, x + W - 8, ry + 22, 0xFFFFFFFF);
-        graphics.fill(x + PANEL_X + 1, ry + 21, x + W - 9, ry + 22, 0xFFFFFFFF);
-        graphics.drawString(font, label, x + PANEL_X + 6, ry + 8, 0xFFFFFFFF, false);
+        graphics.fill(x + PANEL_X, ry, x + W - 8, ry + ROW_H, 0xFF8B8B8B);
+        graphics.fill(x + PANEL_X + 1, ry + 1, x + W - 9, ry + ROW_H - 1, 0xFF373737);
+        graphics.fill(x + W - 9, ry + 1, x + W - 8, ry + ROW_H, 0xFFFFFFFF);
+        graphics.fill(x + PANEL_X + 1, ry + ROW_H - 1, x + W - 9, ry + ROW_H, 0xFFFFFFFF);
+        graphics.drawString(font, label, x + PANEL_X + 6, ry + 6, 0xFFFFFFFF, false);
     }
 
     private boolean drawChip(GuiGraphics graphics, int bx, int by, int bw, int bh, String label,
@@ -326,23 +329,23 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
         int mx = (int) mouseX, my = (int) mouseY;
 
         // 模式
-        if (isHover(mx, my, rightEdge - BTN_MODE_W, y + ROW1 + 2, BTN_MODE_W, BTN_H)) {
+        if (isHover(mx, my, rightEdge - BTN_MODE_W, y + ROW1 + 1, BTN_MODE_W, BTN_H)) {
             return press(0);
         }
         int plusX = rightEdge - BTN_PM_W;
         int minusX = plusX - BTN_PM_W - 2;
         // 速率
-        if (isHover(mx, my, minusX, y + ROW2 + 2, BTN_PM_W, BTN_H)) return press(2);
-        if (isHover(mx, my, plusX, y + ROW2 + 2, BTN_PM_W, BTN_H)) return press(1);
+        if (isHover(mx, my, minusX, y + ROW2 + 1, BTN_PM_W, BTN_H)) return press(2);
+        if (isHover(mx, my, plusX, y + ROW2 + 1, BTN_PM_W, BTN_H)) return press(1);
         // 范围
-        if (isHover(mx, my, minusX, y + ROW3 + 2, BTN_PM_W, BTN_H)) return press(4);
-        if (isHover(mx, my, plusX, y + ROW3 + 2, BTN_PM_W, BTN_H)) return press(3);
+        if (isHover(mx, my, minusX, y + ROW3 + 1, BTN_PM_W, BTN_H)) return press(4);
+        if (isHover(mx, my, plusX, y + ROW3 + 1, BTN_PM_W, BTN_H)) return press(3);
         // 玩家供电开关 + 权限（同一行）
-        if (isHover(mx, my, rightEdge - 156, y + ROW7 + 2, 44, BTN_H)) return press(6);
-        if (isHover(mx, my, rightEdge - 108, y + ROW7 + 2, 44, BTN_H)) return press(7);
-        if (isHover(mx, my, rightEdge - 60, y + ROW7 + 2, 60, BTN_H)) return press(8);
+        if (isHover(mx, my, rightEdge - 156, y + ROW7 + 1, 44, BTN_H)) return press(6);
+        if (isHover(mx, my, rightEdge - 108, y + ROW7 + 1, 44, BTN_H)) return press(7);
+        if (isHover(mx, my, rightEdge - 60, y + ROW7 + 1, 60, BTN_H)) return press(8);
         // 范围显示
-        if (isHover(mx, my, rightEdge - 44, y + ROW4 + 2, 44, BTN_H)) {
+        if (isHover(mx, my, rightEdge - 44, y + ROW4 + 1, 44, BTN_H)) {
             pressedId = 5;
             RangeOverlay.toggle();
             return true;
