@@ -920,14 +920,75 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         return entry != null && canUsePower(entry.owner());
     }
 
-    /** 两名玩家是否处于同一记分板队伍。 */
+    /**
+     * 两名玩家是否处于同一队伍：原版记分板队伍（/team），或 FTB Teams（若已安装）。
+     */
     private boolean sameTeam(java.util.UUID a, java.util.UUID b) {
+        return sameVanillaTeam(a, b) || sameFtbTeam(a, b);
+    }
+
+    /** 原版 /team 记分板队伍（按玩家名查，主人离线也可判定）。 */
+    private boolean sameVanillaTeam(java.util.UUID a, java.util.UUID b) {
         if (!(level instanceof net.minecraft.server.level.ServerLevel sl)) return false;
-        net.minecraft.server.level.ServerPlayer pa = sl.getServer().getPlayerList().getPlayer(a);
-        net.minecraft.server.level.ServerPlayer pb = sl.getServer().getPlayerList().getPlayer(b);
-        if (pa == null || pb == null) return false;
-        net.minecraft.world.scores.PlayerTeam ta = pa.getTeam();
-        return ta != null && ta == pb.getTeam();
+        net.minecraft.server.MinecraftServer server = sl.getServer();
+        net.minecraft.world.scores.Scoreboard scoreboard = server.getScoreboard();
+        String nameA = playerNameOf(server, a);
+        String nameB = playerNameOf(server, b);
+        if (nameA == null || nameB == null) return false;
+        net.minecraft.world.scores.PlayerTeam ta = scoreboard.getPlayersTeam(nameA);
+        return ta != null && ta == scoreboard.getPlayersTeam(nameB);
+    }
+
+    /** FTB Teams 兼容（软依赖：反射调用，未安装时静默返回 false，不产生编译期依赖）。 */
+    private static boolean sameFtbTeam(java.util.UUID a, java.util.UUID b) {
+        if (a == null || b == null || a.equals(b)) return false;
+        try {
+            Class<?> apiCls = Class.forName("dev.ftb.mods.ftbteams.api.FTBTeamsAPI");
+            Object api = apiCls.getMethod("api").invoke(null);
+            if (api == null) return false;
+            Object manager = api.getClass().getMethod("getManager").invoke(api);
+            if (manager == null) return false;
+            // 优先 TeamManager#arePlayersInSameTeam(UUID, UUID)
+            for (java.lang.reflect.Method m : manager.getClass().getMethods()) {
+                if (m.getName().equals("arePlayersInSameTeam") && m.getParameterCount() == 2) {
+                    Object r = m.invoke(manager, a, b);
+                    if (r instanceof Boolean bb) return bb;
+                }
+            }
+            // 退化：getTeamForPlayerID(UUID) 比较队伍 ID
+            java.lang.reflect.Method getTeam = null;
+            for (java.lang.reflect.Method m : manager.getClass().getMethods()) {
+                if (m.getName().equals("getTeamForPlayerID") && m.getParameterCount() == 1) {
+                    getTeam = m;
+                    break;
+                }
+            }
+            if (getTeam == null) return false;
+            Object ta = optionalOrNull(getTeam.invoke(manager, a));
+            Object tb = optionalOrNull(getTeam.invoke(manager, b));
+            if (ta == null || tb == null) return false;
+            Object idA = ta.getClass().getMethod("getId").invoke(ta);
+            Object idB = tb.getClass().getMethod("getId").invoke(tb);
+            return idA != null && idA.equals(idB);
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private static Object optionalOrNull(Object o) {
+        if (o instanceof java.util.Optional<?> opt) return opt.orElse(null);
+        return o;
+    }
+
+
+    /** UUID -> 玩家名：优先在线玩家，离线则查 usercache。 */
+    private static String playerNameOf(net.minecraft.server.MinecraftServer server, java.util.UUID uuid) {
+        if (uuid == null) return null;
+        net.minecraft.server.level.ServerPlayer online = server.getPlayerList().getPlayer(uuid);
+        if (online != null) return online.getGameProfile().getName();
+        if (server.getProfileCache() == null) return null;
+        return server.getProfileCache().get(uuid)
+                .map(com.mojang.authlib.GameProfile::getName).orElse(null);
     }
 
     private static java.util.UUID parseUuidOrNull(String s) {
