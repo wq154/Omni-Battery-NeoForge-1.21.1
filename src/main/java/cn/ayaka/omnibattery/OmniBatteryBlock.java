@@ -127,7 +127,10 @@ public class OmniBatteryBlock extends BaseEntityBlock {
         BlockEntity be = level.getBlockEntity(pos);
         if (be instanceof OmniBatteryBlockEntity battery && player instanceof ServerPlayer sp) {
             // 关键：首次右键者成为主人（否则权限判定会因 ownerUuid 为空而全部放行）
-            battery.ensureOwner(sp);
+            if (battery.ensureOwner(sp)) {
+                sp.displayClientMessage(net.minecraft.network.chat.Component.literal(
+                        "你已成为这个电池的主人"), true);
+            }
             sp.openMenu(battery);
         }
     }

@@ -892,24 +892,28 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
     }
 
     /** 首次交互者成为主人。 */
-    public void ensureOwner(Player player) {
+    public boolean ensureOwner(Player player) {
         if (ownerUuid == null && player != null) {
             ownerUuid = player.getUUID();
             ownerName = player.getGameProfile().getName();
             setChanged();
+            return true;
         }
+        return false;
     }
 
     /** 仅主人可修改电池设置（其他人仍可看 GUI）。 */
     public boolean canManage(Player player) {
-        return player != null && (ownerUuid == null || ownerUuid.equals(player.getUUID()));
+        return player != null && ownerUuid != null && ownerUuid.equals(player.getUUID());
     }
 
     /** 某玩家是否可用本电池传电。 */
     public boolean canUsePower(java.util.UUID uuid) {
         if (access == BatteryAccess.PUBLIC) return true;
         if (uuid == null) return false;
-        if (ownerUuid == null || ownerUuid.equals(uuid)) return true;
+        // 未认领的电池不放行任何人：先由主人右键/放置认领（否则权限形同虚设）
+        if (ownerUuid == null) return false;
+        if (ownerUuid.equals(uuid)) return true;
         if (access == BatteryAccess.TEAM) return sameTeam(ownerUuid, uuid);
         return false;
     }
