@@ -910,12 +910,17 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
 
     /** 某玩家是否可用本电池传电。 */
     public boolean canUsePower(java.util.UUID uuid) {
+        return canUsePower(uuid, null);
+    }
+
+    /** 同上；knownName 为已知玩家名（离线队友也能可靠判定队伍）。 */
+    public boolean canUsePower(java.util.UUID uuid, String knownName) {
         if (access == BatteryAccess.PUBLIC) return true;
         if (uuid == null) return false;
         // 未认领的电池不放行任何人：先由主人右键/放置认领（否则权限形同虚设）
         if (ownerUuid == null) return false;
         if (ownerUuid.equals(uuid)) return true;
-        if (access == BatteryAccess.TEAM) return sameTeam(ownerUuid, uuid);
+        if (access == BatteryAccess.TEAM) return sameTeam(ownerUuid, ownerName, uuid, knownName);
         return false;
     }
 
@@ -925,7 +930,7 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         if (entry == null) return false;
         // 贴纸必须明确归属：无归属（旧存档贴纸）在私人/队伍模式下不放行，
         // 否则任何人的贴纸都会被视为主人所有，导致权限形同虚设。
-        return entry.owner() != null && canUsePower(entry.owner());
+        return entry.owner() != null && canUsePower(entry.owner(), entry.ownerName());
     }
 
     /**
@@ -937,7 +942,7 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         if (entry == null || entry.owner() == null) return false;
         if (ownerUuid == null) return false;
         if (ownerUuid.equals(entry.owner())) return true;
-        if (access == BatteryAccess.TEAM) return sameTeam(ownerUuid, entry.owner());
+        if (access == BatteryAccess.TEAM) return sameTeam(ownerUuid, ownerName, entry.owner(), entry.ownerName());
         return false;
     }
 
@@ -945,10 +950,12 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
      * 两名玩家是否处于同一队伍：原版记分板队伍（/team），或 FTB Teams（若已安装）。
      * 判定失败时给出限流诊断（30 秒最多一条），方便定位"队友标签不生效"。
      */
-    private boolean sameTeam(java.util.UUID a, java.util.UUID b) {
-        if (sameVanillaTeam(a, b)) return true;
-        boolean ftb = sameFtbTeam(a, b);
-        if (ftb) return true;
+    private boolean sameTeam(java.util.UUID a, String nameA, java.util.UUID b, String nameB) {
+        if (a == null || b == null) return false;
+        if (a.equals(b)) return true;
+        // FTB 优先：按 UUID 判定，双方离线同样有效
+        if (sameFtbTeam(a, b)) return true;
+        if (sameVanillaTeam(a, nameA, b, nameB)) return true;
         diagnoseTeamFailure(a, b);
         return false;
     }
@@ -981,18 +988,21 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
             ftbAvailable = false;
         }
         server.sendSystemMessage(net.minecraft.network.chat.Component.literal(
-                "[万能电池·队伍诊断] 主人=" + (na == null ? String.valueOf(a) : na) + " 原版队伍=" + teamA
+                "[万能电池·队伍诊断] 电池主人=" + (ownerUuid == null ? "未认领!" : ownerName)
+                        + " 权限档=" + access.display()
+                        + " ｜ 主人=" + (na == null ? String.valueOf(a) : na) + " 原版队伍=" + teamA
                         + " ｜ 对方=" + (nb == null ? String.valueOf(b) : nb) + " 原版队伍=" + teamB
                         + " ｜ FTB已装=" + ftbAvailable + " FTB同队=" + sameFtbTeam(a, b)));
     }
 
     /** 原版 /team 记分板队伍（按玩家名查，主人离线也可判定）。 */
-    private boolean sameVanillaTeam(java.util.UUID a, java.util.UUID b) {
+    private boolean sameVanillaTeam(java.util.UUID a, String knownA, java.util.UUID b, String knownB) {
         if (!(level instanceof net.minecraft.server.level.ServerLevel sl)) return false;
         net.minecraft.server.MinecraftServer server = sl.getServer();
         net.minecraft.world.scores.Scoreboard scoreboard = server.getScoreboard();
-        String nameA = playerNameOf(server, a);
-        String nameB = playerNameOf(server, b);
+        // 优先使用调用方记录的玩家名，离线玩家也能查到记分板队伍
+        String nameA = knownA != null && !knownA.isEmpty() ? knownA : playerNameOf(server, a);
+        String nameB = knownB != null && !knownB.isEmpty() ? knownB : playerNameOf(server, b);
         if (nameA == null || nameB == null) return false;
         net.minecraft.world.scores.PlayerTeam ta = scoreboard.getPlayersTeam(nameA);
         return ta != null && ta == scoreboard.getPlayersTeam(nameB);
