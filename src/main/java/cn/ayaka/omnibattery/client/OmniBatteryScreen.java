@@ -56,6 +56,10 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
     private int pressedId = -1;
     /** 0 = 主界面，1 = 用电配置子页。 */
     private int page = 0;
+    /** 用电配置页：当前分页 / 展开下拉的机器索引（-1 = 未展开）。 */
+    private int cfgPage = 0;
+    private int openDropdown = -1;
+    private static final int CFG_PER_PAGE = 7;
     private String hint = null;
 
     public OmniBatteryScreen(OmniBatteryMenu menu, Inventory inv, Component title) {
@@ -230,7 +234,7 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
         graphics.fill(x + 1, y + H - 2, x + W - 1, y + H - 1, 0xFF555555);
     }
 
-    /** 用电配置子页：列出本维度所有已打标签的机器，可直接切换模式。 */
+    /** 用电配置子页：分页列出全部已打标签的机器，可下拉改模式，显示吸/供电数据。 */
     private void drawConfigPage(GuiGraphics graphics, int x, int y, int mouseX, int mouseY) {
         hint = null;
         graphics.fill(x + 4, y + 4, x + W - 4, y + 28, 0xFF373737);
@@ -238,13 +242,34 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
         graphics.drawString(font, "用电配置 · 已打标签的机器", x + 10, y + 12, 0xFF202020, false);
         drawChip(graphics, x + W - 68, y + 8, 60, 16, "返回", mouseX, mouseY, -1, "返回主界面");
 
-        int shown = 0;
+        // 统计总数与页数
+        int total = 0;
+        for (int i = 0; i < menu.getTargetCount(); i++) if (menu.hasTarget(i)) total++;
+        int pages = Math.max(1, (total + CFG_PER_PAGE - 1) / CFG_PER_PAGE);
+        if (cfgPage >= pages) cfgPage = pages - 1;
+        if (cfgPage < 0) cfgPage = 0;
+
+        // 分页条
+        drawChip(graphics, x + 8, y + 30, 44, 14, "◀ 上页", mouseX, mouseY, -2, "上一页");
+        drawChip(graphics, x + 56, y + 30, 44, 14, "下页 ▶", mouseX, mouseY, -3, "下一页");
+        graphics.drawString(font, "第 " + (cfgPage + 1) + "/" + pages + " 页 · 共 " + total + " 台",
+                x + 108, y + 33, 0xFF404040, false);
+        // 表头
+        graphics.drawString(font, "机器", x + 14, y + 50, 0xFF404040, false);
+        graphics.drawString(font, "坐标", x + 86, y + 50, 0xFF404040, false);
+        graphics.drawString(font, "吸电/供电", x + 146, y + 50, 0xFF404040, false);
+
+        int start = cfgPage * CFG_PER_PAGE;
+        int shownIdx = 0;
+        int row = 0;
         for (int i = 0; i < menu.getTargetCount(); i++) {
             if (!menu.hasTarget(i)) continue;
-            shown++;
-            int ry = y + CONFIG_ROW0 + i * CONFIG_ROW_H;
-            graphics.fill(x + 8, ry, x + W - 8, ry + 22, 0xFF8B8B8B);
-            graphics.fill(x + 9, ry + 1, x + W - 9, ry + 21, 0xFF373737);
+            if (shownIdx++ < start) continue;
+            if (row >= CFG_PER_PAGE) break;
+            int ry = y + CONFIG_ROW0 + row * CONFIG_ROW_H;
+            row++;
+            graphics.fill(x + 8, ry, x + W - 8, ry + 20, 0xFF8B8B8B);
+            graphics.fill(x + 9, ry + 1, x + W - 9, ry + 19, 0xFF373737);
 
             int tx = menu.getTargetX(i), ty = menu.getTargetY(i), tz = menu.getTargetZ(i);
             String name = "未知机器";
@@ -253,16 +278,47 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
                         minecraft.level.getBlockState(new net.minecraft.core.BlockPos(tx, ty, tz));
                 if (!st.isAir()) name = st.getBlock().getName().getString();
             }
-            if (name.length() > 9) name = name.substring(0, 9) + "…";
-            graphics.drawString(font, name, x + 14, ry + 7, 0xFFFFFFFF, false);
-            graphics.drawString(font, tx + "," + ty + "," + tz, x + 96, ry + 7, 0xFF9FB3C8, false);
-            drawChip(graphics, x + W - 74, ry + 2, 60, 18, menu.getTargetModeName(i),
-                    mouseX, mouseY, 300 + i, "点击切换：吸电 → 供电 → 过载 → 清除");
+            if (name.length() > 6) name = name.substring(0, 6) + "…";
+            graphics.drawString(font, name, x + 12, ry + 6, 0xFFFFFFFF, false);
+            graphics.drawString(font, tx + "," + ty + "," + tz, x + 86, ry + 6, 0xFF9FB3C8, false);
+
+            long ab = menu.getTargetAbsorb(i), su = menu.getTargetSupply(i);
+            String rate = OmniBatteryMenu.fmt(ab) + "/" + OmniBatteryMenu.fmt(su);
+            if (rate.length() > 11) rate = rate.substring(0, 11);
+            graphics.drawString(font, rate, x + 146, ry + 6,
+                    (ab > 0 ? 0xFFFFA640 : (su > 0 ? 0xFF6AE8E0 : 0xFF6E7076)), false);
+
+            // 模式按钮（点击展开下拉）
+            boolean expanded = openDropdown == i;
+            drawChip(graphics, x + W - 74, ry + 1, 62, 18, menu.getTargetModeName(i) + (expanded ? " ▲" : " ▼"),
+                    mouseX, mouseY, 300 + i, "点击选择模式");
         }
-        if (shown == 0) {
-            graphics.drawString(font, "本维度暂时没有打了标签的机器", x + 14, y + CONFIG_ROW0 + 6, 0xFF8FA6BA, false);
+
+        // 下拉选项（画在最上层）
+        if (openDropdown >= 0 && menu.hasTarget(openDropdown)) {
+            int di = -1, cnt = 0;
+            for (int i = 0; i < menu.getTargetCount(); i++) {
+                if (!menu.hasTarget(i)) continue;
+                if (cnt < start) { cnt++; continue; }
+                if (i == openDropdown) { di = cnt - start; break; }
+                cnt++;
+            }
+            if (di >= 0 && di < CFG_PER_PAGE) {
+                int ry = y + CONFIG_ROW0 + di * CONFIG_ROW_H;
+                String[] opts = {"吸电", "供电", "过载", "清除标签"};
+                for (int k = 0; k < opts.length; k++) {
+                    int oy = ry + 19 + k * 13;
+                    boolean hov = isHover(mouseX, mouseY, x + W - 74, oy, 72, 13);
+                    graphics.fill(x + W - 74, oy, x + W - 2, oy + 13, 0xFF05070A);
+                    graphics.fill(x + W - 73, oy + 1, x + W - 3, oy + 12, hov ? 0xFF2E4A6A : 0xFF232A34);
+                    boolean cur = (k == menu.getTargetMode(openDropdown)) || (k == 3);
+                    graphics.drawString(font, opts[k], x + W - 66, oy + 3,
+                            hov ? 0xFFFFFFFF : (cur ? 0xFFB6D6FF : 0xFFC8D2DE), false);
+                }
+            }
         }
-        graphics.drawString(font, "模式按钮：吸电 → 供电 → 过载 → 清除",
+
+        graphics.drawString(font, "点模式按钮选择：吸电 / 供电 / 过载 / 清除标签",
                 x + 10, y + H - 14, 0xFF8FA6BA, false);
     }
 
@@ -389,12 +445,46 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
             int x = leftPos;
             int y = topPos;
             int mx = (int) mouseX, my = (int) mouseY;
-            if (isHover(mx, my, x + W - 68, y + 8, 60, 16)) { page = 0; return true; }   // 返回
+            if (isHover(mx, my, x + W - 68, y + 8, 60, 16)) { page = 0; openDropdown = -1; return true; }   // 返回
+            if (isHover(mx, my, x + 8, y + 30, 44, 14)) { cfgPage = Math.max(0, cfgPage - 1); openDropdown = -1; return true; }
+            if (isHover(mx, my, x + 56, y + 30, 44, 14)) { cfgPage++; openDropdown = -1; return true; }
+
+            // 下拉选项（优先于行按钮）
+            if (openDropdown >= 0 && menu.hasTarget(openDropdown)) {
+                int start = cfgPage * CFG_PER_PAGE, cnt = 0, di = -1;
+                for (int i = 0; i < menu.getTargetCount(); i++) {
+                    if (!menu.hasTarget(i)) continue;
+                    if (cnt < start) { cnt++; continue; }
+                    if (i == openDropdown) { di = cnt - start; break; }
+                    cnt++;
+                }
+                if (di >= 0 && di < CFG_PER_PAGE) {
+                    int ry = y + CONFIG_ROW0 + di * CONFIG_ROW_H;
+                    for (int k = 0; k < 4; k++) {
+                        int oy = ry + 19 + k * 13;
+                        if (isHover(mx, my, x + W - 74, oy, 72, 13)) {
+                            int target = openDropdown;
+                            openDropdown = -1;
+                            return press(400 + target * 4 + k);
+                        }
+                    }
+                }
+            }
+
+            // 行内模式按钮：切换下拉展开状态
+            int start = cfgPage * CFG_PER_PAGE, cnt = 0, row = 0;
             for (int i = 0; i < menu.getTargetCount(); i++) {
                 if (!menu.hasTarget(i)) continue;
-                int ry = y + CONFIG_ROW0 + i * CONFIG_ROW_H;
-                if (isHover(mx, my, x + W - 74, ry + 2, 60, 18)) return press(200 + i);
+                if (cnt++ < start) continue;
+                if (row >= CFG_PER_PAGE) break;
+                int ry = y + CONFIG_ROW0 + row * CONFIG_ROW_H;
+                row++;
+                if (isHover(mx, my, x + W - 74, ry + 1, 62, 18)) {
+                    openDropdown = (openDropdown == i) ? -1 : i;
+                    return true;
+                }
             }
+            openDropdown = -1;
             return true;
         }
         if (button != 0) return super.mouseClicked(mouseX, mouseY, button);

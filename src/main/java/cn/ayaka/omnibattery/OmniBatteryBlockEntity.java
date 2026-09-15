@@ -71,9 +71,11 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
     private int range;
     private int tickCount;
 
-    // ---- 用电报告：记录每个目标机器最近一秒的实际传输量（排查"谁在吃电"）----
-    private final java.util.HashMap<Long, Long> targetMovedThisSecond = new java.util.HashMap<>();
-    private final java.util.HashMap<Long, Long> targetMovedLastSecond = new java.util.HashMap<>();
+    // ---- 用电配置：分别记录每个目标机器最近一秒的吸电 / 供电量 ----
+    private final java.util.HashMap<Long, Long> targetAbsorbThisSecond = new java.util.HashMap<>();
+    private final java.util.HashMap<Long, Long> targetSupplyThisSecond = new java.util.HashMap<>();
+    private final java.util.HashMap<Long, Long> targetAbsorbLastSecond = new java.util.HashMap<>();
+    private final java.util.HashMap<Long, Long> targetSupplyLastSecond = new java.util.HashMap<>();
 
     // ---- 实时速率统计（每 20 tick = 1 秒归零并冻结一次，供 GUI 显示）----
     private long absorbedThisSecond;
@@ -197,10 +199,13 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
             be.recordHistory(be.lastAbsorbed, be.lastSupplied);
             be.absorbedThisSecond = 0;
             be.suppliedThisSecond = 0;
-            // 冻结各目标的本秒传输量（用电报告用）
-            be.targetMovedLastSecond.clear();
-            be.targetMovedLastSecond.putAll(be.targetMovedThisSecond);
-            be.targetMovedThisSecond.clear();
+            // 冻结各目标的本秒传输量（用电配置界面用，分吸/供）
+            be.targetAbsorbLastSecond.clear();
+            be.targetAbsorbLastSecond.putAll(be.targetAbsorbThisSecond);
+            be.targetAbsorbThisSecond.clear();
+            be.targetSupplyLastSecond.clear();
+            be.targetSupplyLastSecond.putAll(be.targetSupplyThisSecond);
+            be.targetSupplyThisSecond.clear();
             be.secondTick = 0;
             be.syncToClients();   // 同步 BE 本体（NBT 含 LastAbsorbed/LastSupplied）
             // 关键：同步 Menu 的 data slots（GUI 显示源），否则客户端读不到新速率
@@ -257,7 +262,7 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
                         int c = (int) Math.min(remaining, Integer.MAX_VALUE);
                         int moved = tryAbsorbFromFirstSide(level, be, c, sticker);
                         if (moved <= 0) break;
-                        trackTargetMove(be.getBlockPos(), moved);
+                        trackTargetMove(be.getBlockPos(), moved, true);
                         remaining -= moved;
                     }
                     continue;
@@ -269,7 +274,7 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
                         int c = (int) Math.min(remaining, Integer.MAX_VALUE);
                         int moved = tryAbsorbFrom(level, be, dir, c, sticker);
                         if (moved <= 0) break;
-                        trackTargetMove(be.getBlockPos(), moved);
+                        trackTargetMove(be.getBlockPos(), moved, true);
                         remaining -= moved;
                     }
                 }
@@ -307,7 +312,7 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
                         int c = (int) Math.min(remaining, Integer.MAX_VALUE);
                         int moved = trySupplyToFirstSide(level, be, c, sticker);
                         if (moved <= 0) break;
-                        trackTargetMove(be.getBlockPos(), moved);
+                        trackTargetMove(be.getBlockPos(), moved, false);
                         remaining -= moved;
                     }
                     continue;
@@ -319,7 +324,7 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
                         int c = (int) Math.min(remaining, Integer.MAX_VALUE);
                         int moved = trySupplyTo(level, be, dir, c, sticker);
                         if (moved <= 0) break;
-                        trackTargetMove(be.getBlockPos(), moved);
+                        trackTargetMove(be.getBlockPos(), moved, false);
                         remaining -= moved;
                     }
                 }
@@ -331,10 +336,36 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
     }
 
 
-    /** 记录某个目标机器本次传输量（吸/供都算），用于用电报告。 */
-    private void trackTargetMove(BlockPos pos, int moved) {
+    /** 记录某个目标机器本次传输量（分吸/供两个方向），用于用电配置界面。 */
+    private void trackTargetMove(BlockPos pos, int moved, boolean absorbing) {
         if (pos == null || moved <= 0) return;
-        targetMovedThisSecond.merge(pos.asLong(), (long) moved, Long::sum);
+        if (absorbing) {
+            targetAbsorbThisSecond.merge(pos.asLong(), (long) moved, Long::sum);
+        } else {
+            targetSupplyThisSecond.merge(pos.asLong(), (long) moved, Long::sum);
+        }
+    }
+
+    /** 某目标最近一秒的吸电量（FE/s）。 */
+    public long targetAbsorbRate(BlockPos pos) {
+        return pos == null ? 0L : targetAbsorbLastSecond.getOrDefault(pos.asLong(), 0L);
+    }
+
+    /** 某目标最近一秒的供电量（FE/s）。 */
+    public long targetSupplyRate(BlockPos pos) {
+        return pos == null ? 0L : targetSupplyLastSecond.getOrDefault(pos.asLong(), 0L);
+    }
+
+    /** 以指定模式设定某台被打标签机器（null = 清除标签）。 */
+    public boolean setTargetMode(BlockPos pos, StickerMode mode, Player player) {
+        if (pos == null || !canManage(player)) return false;
+        if (!(level instanceof net.minecraft.server.level.ServerLevel sl)) return false;
+        StickerSavedData data = StickerSavedData.get(sl);
+        StickerSavedData.StickerEntry e = data.getEntry(pos);
+        if (e == null) return false;
+        data.setMode(pos, mode, e.owner(), e.ownerName());
+        setChanged();
+        return true;
     }
 
     /**
@@ -343,7 +374,7 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
      */
     public java.util.List<String> drainReport() {
         java.util.List<java.util.Map.Entry<Long, Long>> list =
-                new java.util.ArrayList<>(targetMovedLastSecond.entrySet());
+                new java.util.ArrayList<>(targetSupplyLastSecond.entrySet());
         list.removeIf(e -> e.getValue() == null || e.getValue() <= 0L);
         list.sort((a, b) -> Long.compare(b.getValue(), a.getValue()));
         java.util.List<String> out = new java.util.ArrayList<>();
