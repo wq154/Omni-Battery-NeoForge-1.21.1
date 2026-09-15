@@ -122,6 +122,16 @@ public class OmniBatteryMenu extends AbstractContainerMenu {
                         "电池权限：" + blockEntity.getAccess().display()), true);
             }
             default -> {
+                if (button >= 900 && button < 900 + 256) {
+                    // 下拉选择：切到第 (button-900) 个绑定并打开它（延迟到下一 tick，避免容器崩溃）
+                    int idx = button - 900;
+                    if (player instanceof net.minecraft.server.level.ServerPlayer sp3) {
+                        sp3.server.tell(new net.minecraft.server.TickTask(
+                                sp3.server.getTickCount() + 1,
+                                () -> cn.ayaka.omnibattery.network.OpenBoundBatteryPayload.handleOpenIndex(sp3, idx)));
+                    }
+                    return true;
+                }
                 if (button == SWITCH_BATTERY) {
                     // 切到贴纸绑定的下一块电池并打开它的界面。
                     // 关键：绝不能在这个菜单回调内部直接 openMenu —— 旧容器此刻仍在 tick 处理中，

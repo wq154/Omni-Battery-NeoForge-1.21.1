@@ -38,6 +38,33 @@ public record OpenBoundBatteryPayload(boolean unused) implements CustomPacketPay
         });
     }
 
+    /** 打开指定索引的绑定（下拉选择用）。 */
+    public static void handleOpenIndex(ServerPlayer sp, int idx) {
+        if (sp == null || sp.hasDisconnected()) return;
+        if (!sp.server.isSameThread()) {
+            sp.server.execute(() -> handleOpenIndex(sp, idx));
+            return;
+        }
+        ItemStack sticker = findSticker(sp);
+        if (!sticker.isEmpty()) MachineStickerItem.setBindIndex(sticker, idx);
+        handleOpen(sp, false);
+    }
+
+    /** 在玩家身上（主副手 -> 物品栏 -> 饰品栏）找一枚已绑定的标签工具。 */
+    public static ItemStack findSticker(ServerPlayer sp) {
+        for (InteractionHand hand : InteractionHand.values()) {
+            ItemStack st = sp.getItemInHand(hand);
+            if (st.getItem() instanceof MachineStickerItem && MachineStickerItem.hasBind(st)) return st;
+        }
+        var inv = sp.getInventory();
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            ItemStack st = inv.getItem(i);
+            if (st.getItem() instanceof MachineStickerItem && MachineStickerItem.hasBind(st)) return st;
+        }
+        ItemStack cu = cn.ayaka.omnibattery.compat.CuriosCompat.findStickerWithBind(sp);
+        return cu == null ? ItemStack.EMPTY : cu;
+    }
+
     /** 供切换按钮复用：next=true 时先切到下一个绑定。内部保证在服务器主线程执行。 */
     public static void handleOpen(ServerPlayer sp, boolean next) {
         if (sp == null || sp.hasDisconnected()) return;

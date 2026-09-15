@@ -198,6 +198,15 @@ public class MachineStickerItem extends Item {
         return (i % n + n) % n;
     }
 
+    /** 直接选中断定索引（下拉选择用）。返回是否成功。 */
+    public static boolean setBindIndex(ItemStack stack, int idx) {
+        int n = getBindCount(stack);
+        if (n == 0) return false;
+        final int i = ((idx % n) + n) % n;
+        CustomData.update(DataComponents.CUSTOM_DATA, stack, t -> t.putInt(TAG_BIDX, i));
+        return true;
+    }
+
     /** 切到下一个绑定，返回新的选中项 [x,y,z,dim]，没有绑定则返回 null。 */
     public static Object[] cycleBind(ItemStack stack) {
         int n = getBindCount(stack);

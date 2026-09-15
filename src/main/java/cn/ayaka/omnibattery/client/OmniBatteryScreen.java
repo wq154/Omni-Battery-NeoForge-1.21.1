@@ -67,6 +67,45 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
     private boolean cfgDesc = true;
     /** 快照索引 -> 机器名（由服务端同步，客户端不查方块）。 */
     private final java.util.Map<Integer, String> NAMES = new java.util.HashMap<>();
+    /** 顶部"切换电池"下拉是否展开。 */
+    private boolean bindOpen = false;
+
+    /** 客户端读自己身上的标签工具（主副手 -> 物品栏），用于显示绑定列表。 */
+    private net.minecraft.world.item.ItemStack clientSticker() {
+        if (minecraft == null || minecraft.player == null) return null;
+        for (net.minecraft.world.InteractionHand h : net.minecraft.world.InteractionHand.values()) {
+            net.minecraft.world.item.ItemStack st = minecraft.player.getItemInHand(h);
+            if (st.getItem() instanceof cn.ayaka.omnibattery.MachineStickerItem
+                    && cn.ayaka.omnibattery.MachineStickerItem.hasBind(st)) return st;
+        }
+        var inv = minecraft.player.getInventory();
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            net.minecraft.world.item.ItemStack st = inv.getItem(i);
+            if (st.getItem() instanceof cn.ayaka.omnibattery.MachineStickerItem
+                    && cn.ayaka.omnibattery.MachineStickerItem.hasBind(st)) return st;
+        }
+        return null;
+    }
+
+    private java.util.List<Object[]> clientBinds() {
+        var st = clientSticker();
+        return st == null ? java.util.List.of() : cn.ayaka.omnibattery.MachineStickerItem.getBinds(st);
+    }
+
+    private int clientBindIndex() {
+        var st = clientSticker();
+        return st == null ? -1 : cn.ayaka.omnibattery.MachineStickerItem.getBindIndex(st);
+    }
+
+    /** 下拉框左边缘：贴在等级徽章左侧，绝不遮挡徽章。 */
+    private int bindDropdownX() {
+        int badgeW = font.width(menu.getTier().display()) + 12;
+        return leftPos + W - 8 - badgeW - 4 - BIND_DW;
+    }
+
+    private static final int BIND_DW = 76;
+    private static final int BIND_DY = 8;
+    private static final int BIND_DH = 16;
     private String hint = null;
 
     public OmniBatteryScreen(OmniBatteryMenu menu, Inventory inv, Component title) {
@@ -211,8 +250,27 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
                 menu.getAccessDisplay(), mouseX, mouseY, 8, "切换权限：私人 / 队伍 / 公开");
 
         // ==== 用电报告按钮（趋势标题右侧）====
-        drawChip(graphics, rightEdge - 128, y + TREND_TITLE_Y - 5, 62, 16, "切换电池",
-                mouseX, mouseY, OmniBatteryMenu.SWITCH_BATTERY, "切到下一块已绑定的电池");
+        // ==== 切换电池下拉（顶栏，等级徽章左侧；不遮挡徽章）====
+        java.util.List<Object[]> binds = clientBinds();
+        int bdx = bindDropdownX();
+        int bcur = clientBindIndex();
+        String bLabel = binds.isEmpty() ? "未绑定"
+                : ("电池 " + (bcur + 1) + "/" + binds.size());
+        drawChip(graphics, bdx, y + BIND_DY, BIND_DW, BIND_DH,
+                bLabel + (bindOpen ? " ▲" : " ▼"), mouseX, mouseY, -5,
+                binds.isEmpty() ? "先在电池上潜行右键即可绑定" : "切换要打开的电池");
+        if (bindOpen && !binds.isEmpty()) {
+            for (int i = 0; i < binds.size(); i++) {
+                Object[] bo = binds.get(i);
+                int oy = y + BIND_DY + BIND_DH + 2 + i * 14;
+                boolean hov = isHover(mouseX, mouseY, bdx, oy, BIND_DW, 14);
+                graphics.fill(bdx, oy, bdx + BIND_DW, oy + 14, 0xFF05070A);
+                graphics.fill(bdx + 1, oy + 1, bdx + BIND_DW - 1, oy + 13, hov ? 0xFF2E4A6A : 0xFF232A34);
+                String lbl = "#" + (i + 1) + " " + bo[0] + "," + bo[1] + "," + bo[2];
+                if (font.width(lbl) > BIND_DW - 8) lbl = "#" + (i + 1);
+                graphics.drawString(font, lbl, bdx + 4, oy + 3, hov ? 0xFFFFFFFF : 0xFFC8D2DE, false);
+            }
+        }
         drawChip(graphics, rightEdge - 62, y + TREND_TITLE_Y - 5, 62, 16, "用电配置",
                 mouseX, mouseY, 9, "查看/调整本维度所有打了标签的机器");
 
@@ -578,8 +636,21 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
         if (isHover(mx, my, minusX, y + ROW3 + 1, BTN_PM_W, BTN_H)) return press(4);
         if (isHover(mx, my, plusX, y + ROW3 + 1, BTN_PM_W, BTN_H)) return press(3);
         // 切换电池（发按钮 id 给服务端：切到贴纸绑定的下一块电池并打开它）
-        if (isHover(mx, my, rightEdge - 128, y + TREND_TITLE_Y - 5, 62, 16)) {
-            return press(OmniBatteryMenu.SWITCH_BATTERY);
+        // 切换电池下拉
+        int bdx2 = bindDropdownX();
+        if (isHover(mx, my, bdx2, y + BIND_DY, BIND_DW, BIND_DH)) {
+            bindOpen = !bindOpen;
+            return true;
+        }
+        if (bindOpen) {
+            java.util.List<Object[]> binds2 = clientBinds();
+            for (int i = 0; i < binds2.size(); i++) {
+                int oy = y + BIND_DY + BIND_DH + 2 + i * 14;
+                if (isHover(mx, my, bdx2, oy, BIND_DW, 14)) {
+                    bindOpen = false;
+                    return press(900 + i);
+                }
+            }
         }
         // 用电配置（本地切页，不发服务端）
         if (isHover(mx, my, rightEdge - 62, y + TREND_TITLE_Y - 5, 62, 16)) { page = 1; return true; }
