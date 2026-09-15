@@ -55,10 +55,11 @@ public class MachineStickerItem extends Item {
             return InteractionResultHolder.fail(stack);
         }
         if (getSelectedMode(stack) == StickerMode.CUSTOM) {
-            // 已经是"自定义"模式：在客户端弹出数值输入框（服务端只负责保存）
+            // 已经是"自定义"模式：在客户端弹出数值输入框（服务端只负责保存）。
+            // 注意：必须走反射桥，绝不能在这里直接 new 客户端屏幕 —— 否则专用服务器上
+            // 加载本类时会解析不到 net.minecraft.client.* 而崩溃。
             if (level.isClientSide) {
-                net.minecraft.client.Minecraft.getInstance()
-                        .setScreen(new cn.ayaka.omnibattery.client.CustomCapScreen(stack));
+                cn.ayaka.omnibattery.client.ClientHooks.openCustomCap(stack);
             }
             return InteractionResultHolder.success(stack);
         }
