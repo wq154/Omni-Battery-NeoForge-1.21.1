@@ -17,8 +17,8 @@ public class OmniBatteryMenu extends AbstractContainerMenu {
     // ---------------- 用电配置页 ----------------
     /** 界面最多展示的机器数（仅用于按钮 id 分配；实际列表由 BE 的 NBT 同步，无上限时为 0）。 */
     public static final int TARGET_COUNT = 0;
-    /** 本界面所属电池的位置（客户端也有效，用于读取客户端 BE 的同步列表）。 */
-    private final net.minecraft.core.BlockPos menuPos;
+    /** 电池位置的数据槽（服务端每 tick 写入，客户端据此查找客户端 BE）。 */
+    private static final int POS_SLOT = 15 + OmniBatteryBlockEntity.HISTORY_SIZE * 4 + 8;
 
 
     private final ContainerData data;
@@ -28,8 +28,8 @@ public class OmniBatteryMenu extends AbstractContainerMenu {
     public OmniBatteryMenu(int id, Inventory inv, OmniBatteryBlockEntity be) {
         super(ModMenuTypes.OMNI_BATTERY.get(), id);
         this.blockEntity = be;
-        this.menuPos = be != null ? be.getBlockPos() : net.minecraft.core.BlockPos.ZERO;
-        this.data = new SimpleContainerData(15 + OmniBatteryBlockEntity.HISTORY_SIZE * 4);
+        // menuPos 由 data slot 提供（见 POS_SLOT）
+        this.data = new SimpleContainerData(15 + OmniBatteryBlockEntity.HISTORY_SIZE * 4 + 11);
         addDataSlots(data);
     }
 
@@ -68,6 +68,11 @@ public class OmniBatteryMenu extends AbstractContainerMenu {
             data.set(12, blockEntity.isChargeInventory() ? 1 : 0);
             data.set(13, blockEntity.isChargeCurios() ? 1 : 0);
             data.set(14, blockEntity.getAccess().ordinal());
+            // 电池坐标（供客户端查找客户端 BE 上的同步列表）
+            net.minecraft.core.BlockPos bp = blockEntity.getBlockPos();
+            data.set(POS_SLOT, bp.getX());
+            data.set(POS_SLOT + 1, bp.getY());
+            data.set(POS_SLOT + 2, bp.getZ());
             // 趋势图历史：每点 4 个 int slot（absorb long + supply long）
             for (int i = 0; i < OmniBatteryBlockEntity.HISTORY_SIZE; i++) {
                 syncLong(15 + i * 4, blockEntity.getAbsorbHistory(i));
@@ -208,7 +213,9 @@ public class OmniBatteryMenu extends AbstractContainerMenu {
     }
 
     // ---------------- 用电配置页读取 ----------------
-    public net.minecraft.core.BlockPos getMenuPos() { return menuPos; }
+    public net.minecraft.core.BlockPos getMenuPos() {
+        return new net.minecraft.core.BlockPos(data.get(POS_SLOT), data.get(POS_SLOT + 1), data.get(POS_SLOT + 2));
+    }
 
     /** 把第 index 台机器设为指定模式（option: 0 吸电 / 1 供电 / 2 过载 / 3 清除标签）。 */
     public boolean applyTargetOption(int index, int option, Player player) {

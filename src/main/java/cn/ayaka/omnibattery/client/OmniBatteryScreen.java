@@ -59,7 +59,7 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
     /** 用电配置页：当前分页 / 展开下拉的机器索引（-1 = 未展开）。 */
     private int cfgPage = 0;
     private int openDropdown = -1;
-    private static final int CFG_PER_PAGE = 9;
+    private static final int CFG_PER_PAGE = 8;
     /** 筛选：0 全部 / 1 吸电 / 2 供电 / 3 过载。 */
     private int cfgFilter = 0;
     /** 排序键：0 按吸电量 / 1 按供电量；cfgDesc = 反序。 */
@@ -344,8 +344,10 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
                 if (r[0] != openDropdown) continue;
                 int ry = y + CONFIG_ROW0 + 20 + row * CONFIG_ROW_H;
                 String[] opts = {"吸电", "供电", "过载", "清除标签"};
+                // 空间不足时向上展开，避免超出窗口底部
+                boolean up = (ry + 19 + opts.length * 13) > (y + H - 6);
                 for (int k = 0; k < opts.length; k++) {
-                    int oy = ry + 19 + k * 13;
+                    int oy = up ? (ry - (opts.length - k) * 13) : (ry + 19 + k * 13);
                     boolean hov = isHover(mouseX, mouseY, x + W - 74, oy, 72, 13);
                     graphics.fill(x + W - 74, oy, x + W - 2, oy + 13, 0xFF05070A);
                     graphics.fill(x + W - 73, oy + 1, x + W - 3, oy + 12, hov ? 0xFF2E4A6A : 0xFF232A34);
@@ -499,8 +501,9 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
                     int[] r = view.get(start + row);
                     if (r[0] != openDropdown) continue;
                     int ry = y + CONFIG_ROW0 + 20 + row * CONFIG_ROW_H;
+                    boolean up = (ry + 19 + 4 * 13) > (y + H - 6);
                     for (int k = 0; k < 4; k++) {
-                        int oy = ry + 19 + k * 13;
+                        int oy = up ? (ry - (4 - k) * 13) : (ry + 19 + k * 13);
                         if (isHover(mx, my, x + W - 74, oy, 72, 13)) {
                             int snapIdx = r[0];
                             openDropdown = -1;
