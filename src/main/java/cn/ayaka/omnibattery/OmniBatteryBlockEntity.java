@@ -363,9 +363,6 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         return 1_000_000L;
     }
 
-    /** 自定义模式的记账表：目标坐标 -> 已累计灌入的电量（FE）。 */
-    private final java.util.HashMap<Long, Long> customFilled = new java.util.HashMap<>();
-
     private void trackTargetMove(BlockPos pos, int moved, boolean absorbing) {
         if (pos == null || moved <= 0) return;
         if (absorbing) {
@@ -662,11 +659,14 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         if (storage == null) return 0;
         if (isOwnOrOmniBatteryStorage(be, storage)) return 0;
         if (sticker == StickerMode.ABSORB) return transferExtractOnce(storage, request);
-        if (sticker == StickerMode.OVERLOAD) {
-            if (!canActuallyExtract(storage, request) && readEnergyReflective(storage) <= 0L) return 0;
-            int moved = transferExtractLoop(storage, request);
-            if (moved < request) moved += drainEnergyReflective(storage, request - moved);
-            if (moved < request) moved += drainEnergyNbt(level, be, request - moved);
+        if (sticker == StickerMode.OVERLOAD || sticker == StickerMode.CUSTOM) {
+            // 过载 / 自定义：强力抽取（自定义的速率上限由玩家设定）
+            long rate = sticker == StickerMode.CUSTOM ? customCapFor(be) : Long.MAX_VALUE;
+            int budget = (int) Math.min(request, Math.max(1L, Math.min(rate, Integer.MAX_VALUE)));
+            if (!canActuallyExtract(storage, budget) && readEnergyReflective(storage) <= 0L) return 0;
+            int moved = transferExtractLoop(storage, budget);
+            if (moved < budget) moved += drainEnergyReflective(storage, budget - moved);
+            if (moved < budget) moved += drainEnergyNbt(level, be, budget - moved);
             return moved;
         }
         return 0;
@@ -679,25 +679,15 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         if (isOwnOrOmniBatteryStorage(be, storage)) return 0;
         if (sticker == StickerMode.SUPPLY) return transferReceiveOnce(storage, request);
         if (sticker == StickerMode.CUSTOM) {
-            // 自定义 = 给这台机器一个"累计供电上限"，达到就停，所以永远不会无限吃电。
-            //
-            // 重要：这里**绝不能**去改机器自身的 NBT（历史上的做法是 saveWithoutMetadata +
-            // loadWithComponents 把"容量"字段改小）。那样等于每 tick 把机器 BE 整个重新反序列化，
-            // 会重置机器内部状态、让区块反复标脏，最终把区块光照搞崩 —— 表现就是地图一片漆黑、
-            // 四处刷怪（区块光照等级掉到 0）。改成只在自己的表里记账，零副作用。
-            long cap = customCapFor(be);
-            long key = be.getBlockPos().asLong();
-            long already = customFilled.getOrDefault(key, 0L);
-            long left = cap - already;
-            if (left <= 0L) return 0;
-            int budget = (int) Math.min(request, left);
+            // 自定义 = 过载的强力传输，但速率用玩家设定的值（而不是电池的速率档）。
+            // 特性与过载完全一致：标准接口 -> 反射 -> NBT 硬灌。
+            long rate = customCapFor(be);
+            // 用玩家设定的速率，而不是电池的速率档（这才是"自定义过载量"的意义）。
+            // 实际能搬多少仍受电池剩余 / 机器状态限制，由下面的循环保证。
+            int budget = (int) Math.max(1L, Math.min(rate, Integer.MAX_VALUE));
             int moved = transferReceiveLoop(storage, budget);
             if (moved < budget) moved += fillEnergyReflective(storage, budget - moved);
             if (moved < budget) moved += fillEnergyNbt(level, be, budget - moved);
-            if (moved > 0) {
-                customFilled.merge(key, (long) moved, Long::sum);
-                setChanged();
-            }
             return moved;
         }
         if (sticker == StickerMode.OVERLOAD) {

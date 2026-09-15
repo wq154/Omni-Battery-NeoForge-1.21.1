@@ -155,7 +155,7 @@ public class MachineStickerItem extends Item {
         }
         tooltip.add(Component.literal("\u8bbe\u7f6e\uff1a\u53ef\u653e\u5165\u9970\u54c1\u680f\u62a4\u8eab\u7b26/CHARM \u69fd\u4f4d").withStyle(ChatFormatting.LIGHT_PURPLE));
         if (mode == StickerMode.CUSTOM) {
-            tooltip.add(Component.literal("\u81ea\u5b9a\u4e49\u5bb9\u91cf\uff1a" + getCustomCap(stack) + " FE")
+            tooltip.add(Component.literal("\u81ea\u5b9a\u4e49\u8fc7\u8f7d\u901f\u7387\uff1a" + getCustomCap(stack) + " FE/t")
                     .withStyle(ChatFormatting.GOLD));
             tooltip.add(Component.literal("\u53f3\u952e\u7a7a\u6c14\uff1a\u4fee\u6539\u6570\u503c").withStyle(ChatFormatting.GRAY));
         }

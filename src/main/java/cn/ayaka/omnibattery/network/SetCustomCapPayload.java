@@ -34,7 +34,7 @@ public record SetCustomCapPayload(long value) implements CustomPacketPayload {
                 ItemStack st = sp.getItemInHand(hand);
                 if (st.getItem() instanceof MachineStickerItem) {
                     MachineStickerItem.setCustomCap(st, payload.value());
-                    sp.displayClientMessage(Component.literal("\u81ea\u5b9a\u4e49\u5bb9\u91cf\u5df2\u8bbe\u4e3a " + payload.value() + " FE")
+                    sp.displayClientMessage(Component.literal("\u81ea\u5b9a\u4e49\u8fc7\u8f7d\u901f\u7387\u5df2\u8bbe\u4e3a " + payload.value() + " FE/t")
                             .withStyle(net.minecraft.ChatFormatting.GOLD), true);
                     return;
                 }

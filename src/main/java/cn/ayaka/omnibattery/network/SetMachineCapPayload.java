@@ -38,7 +38,7 @@ public record SetMachineCapPayload(int x, int y, int z, long value) implements C
                 if (sl.getBlockEntity(pos) instanceof OmniBatteryBlockEntity be) {
                     if (be.setMachineCap(pos, payload.value(), sp)) {
                         sp.displayClientMessage(Component.literal(
-                                        "\u81ea\u5b9a\u4e49\u5bb9\u91cf\u5df2\u8bbe\u4e3a " + payload.value() + " FE")
+                                        "\u81ea\u5b9a\u4e49\u8fc7\u8f7d\u901f\u7387\u5df2\u8bbe\u4e3a " + payload.value() + " FE/t")
                                 .withStyle(net.minecraft.ChatFormatting.GOLD), true);
                     }
                     return;

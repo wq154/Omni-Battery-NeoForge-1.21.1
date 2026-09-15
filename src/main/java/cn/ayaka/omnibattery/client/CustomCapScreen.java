@@ -26,7 +26,7 @@ public class CustomCapScreen extends Screen {
 
     /** 物品模式。 */
     public CustomCapScreen(ItemStack stack) {
-        super(Component.literal("自定义容量"));
+        super(Component.literal("自定义过载速率"));
         this.stack = stack;
         this.machinePos = null;
         this.initial = MachineStickerItem.getCustomCap(stack);
@@ -34,7 +34,7 @@ public class CustomCapScreen extends Screen {
 
     /** 机器模式（从电池 GUI 进入）。 */
     public CustomCapScreen(BlockPos machinePos, long initial) {
-        super(Component.literal("自定义容量"));
+        super(Component.literal("自定义过载速率"));
         this.stack = null;
         this.machinePos = machinePos;
         this.initial = initial > 0L ? initial : 1_000_000L;
@@ -44,7 +44,7 @@ public class CustomCapScreen extends Screen {
     protected void init() {
         int cx = this.width / 2;
         int cy = this.height / 2;
-        EditBox box = new EditBox(this.font, cx - 90, cy - 8, 180, 20, Component.literal("容量"));
+        EditBox box = new EditBox(this.font, cx - 90, cy - 8, 180, 20, Component.literal("速率"));
         box.setMaxLength(18);
         box.setValue(String.valueOf(this.initial));
         addRenderableWidget(box);
@@ -75,11 +75,11 @@ public class CustomCapScreen extends Screen {
         renderBackground(graphics, mouseX, mouseY, partialTick);
         int cx = this.width / 2;
         int cy = this.height / 2;
-        graphics.drawCenteredString(this.font, "自定义容量上限（FE）", cx, cy - 40, 0xFFFFFF);
+        graphics.drawCenteredString(this.font, "自定义过载速率（FE/t）", cx, cy - 40, 0xFFFFFF);
         graphics.drawCenteredString(this.font,
                 machinePos != null
-                        ? "应用在这台机器上：把它的容量设成此值，只灌到这里为止"
-                        : "过载时会把机器容量设成这个值，只灌到这里为止，不会无限吃电",
+                        ? "这台机器改用自定义过载：每 tick 最多传输此数值"
+                        : "自定义 = 过载模式，但速率用这个数值（每 tick 最多传输这么多）",
                 cx, cy - 26, 0xA0A6B0);
         super.render(graphics, mouseX, mouseY, partialTick);
     }
