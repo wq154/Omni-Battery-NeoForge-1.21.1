@@ -317,7 +317,9 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
         java.util.List<int[]> out = new java.util.ArrayList<>();
         for (int i = 0; i < all.size(); i++) {
             cn.ayaka.omnibattery.OmniBatteryBlockEntity.TargetInfo t = all.get(i);
-            if (cfgFilter != 0 && t.mode() != cfgFilter - 1) continue;
+            // 筛选：自定义（显示序号 3）归入"过载"这一类（序号 2）
+            int fm = t.mode() == 3 ? 2 : t.mode();
+            if (cfgFilter != 0 && fm != cfgFilter - 1) continue;
             out.add(new int[]{i, t.x(), t.y(), t.z(), t.mode(),
                     (int) t.absorb(), (int) (t.absorb() >>> 32),
                     (int) t.supply(), (int) (t.supply() >>> 32), 0});

@@ -47,22 +47,27 @@ public class MachineStickerItem extends Item {
     @Override
     public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
         ItemStack stack = player.getItemInHand(hand);
+
         if (level.isClientSide) {
+            // 客户端：手持"自定义"模式且未潜行时，右键空气 = 打开数值输入框。
+            // 必须放在 isClientSide 提前返回之前，否则这段永远执行不到。
+            // 同时只走反射桥，避免公共类直接链接 net.minecraft.client.*（会让专用服务器崩溃）。
+            if (!player.isShiftKeyDown() && getSelectedMode(stack) == StickerMode.CUSTOM) {
+                cn.ayaka.omnibattery.client.ClientHooks.openCustomCap(stack);
+                return InteractionResultHolder.success(stack);
+            }
             return InteractionResultHolder.pass(stack);
         }
+
         if (!player.isShiftKeyDown()) {
+            if (getSelectedMode(stack) == StickerMode.CUSTOM) {
+                return InteractionResultHolder.success(stack);   // 客户端已弹输入框
+            }
             player.displayClientMessage(Component.literal("\u6f5c\u884c\u53f3\u952e\u7a7a\u6c14\uff1a\u5207\u6362\u6807\u7b7e\u6a21\u5f0f").withStyle(ChatFormatting.GRAY), true);
             return InteractionResultHolder.fail(stack);
         }
-        if (getSelectedMode(stack) == StickerMode.CUSTOM) {
-            // 已经是"自定义"模式：在客户端弹出数值输入框（服务端只负责保存）。
-            // 注意：必须走反射桥，绝不能在这里直接 new 客户端屏幕 —— 否则专用服务器上
-            // 加载本类时会解析不到 net.minecraft.client.* 而崩溃。
-            if (level.isClientSide) {
-                cn.ayaka.omnibattery.client.ClientHooks.openCustomCap(stack);
-            }
-            return InteractionResultHolder.success(stack);
-        }
+
+        // 潜行右键空气 = 循环切换模式（自定义模式下也能切走，不会卡住）
         StickerMode next = getSelectedMode(stack).next();
         setSelectedMode(stack, next);
         player.displayClientMessage(
@@ -152,7 +157,7 @@ public class MachineStickerItem extends Item {
         if (mode == StickerMode.CUSTOM) {
             tooltip.add(Component.literal("\u81ea\u5b9a\u4e49\u5bb9\u91cf\uff1a" + getCustomCap(stack) + " FE")
                     .withStyle(ChatFormatting.GOLD));
-            tooltip.add(Component.literal("\u6f5c\u884c\u53f3\u952e\u7a7a\u6c14\uff1a\u4fee\u6539\u6570\u503c").withStyle(ChatFormatting.GRAY));
+            tooltip.add(Component.literal("\u53f3\u952e\u7a7a\u6c14\uff1a\u4fee\u6539\u6570\u503c").withStyle(ChatFormatting.GRAY));
         }
         tooltip.add(Component.literal("\u6a21\u5f0f\uff1a\u4f9b\u7535 \u2192 \u5435\u7535 \u2192 \u8fc7\u8f7d \u2192 \u81ea\u5b9a\u4e49 \u2192 \u6e05\u9664").withStyle(ChatFormatting.DARK_GRAY));
         tooltip.add(Component.literal("\u81ea\u52a8\u8d34\u6807\u5f00\u542f\u540e\uff0c\u673a\u5668\u653e\u7f6e\u65f6\u81ea\u52a8\u8d34\u4e0a\u5f53\u524d\u6a21\u5f0f").withStyle(ChatFormatting.DARK_GRAY));

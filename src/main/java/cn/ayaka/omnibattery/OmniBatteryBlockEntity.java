@@ -392,9 +392,14 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         return changed;
     }
 
+    /** 只认这些标准的"容量"字段名，避免误改别的模组的任意 NBT（曾因太宽松而风险过高）。 */
     private static boolean isCapacityKey(String k) {
-        return (k.contains("cap") || k.contains("max"))
-                && !k.contains("x") && !k.contains("y") && !k.contains("z");
+        return switch (k) {
+            case "capacity", "maxcapacity", "energycapacity",
+                 "maxenergy", "maxenergystored", "maxenergyreceive", "maxenergyextract",
+                 "energymax", "maxfe", "maxstorage" -> true;
+            default -> false;
+        };
     }
 
     private void trackTargetMove(BlockPos pos, int moved, boolean absorbing) {
