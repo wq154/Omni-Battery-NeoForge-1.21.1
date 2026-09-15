@@ -81,8 +81,8 @@ public class OmniBatteryMenu extends AbstractContainerMenu {
     @Override
     public boolean clickMenuButton(Player player, int button) {
         if (blockEntity == null) return false;
-        // 首次交互者成为主人；此后仅主人可改设置
-        blockEntity.ensureOwner(player);
+        // 注意：这里**不能**自动认领，否则任何玩家点一下按钮就会变成主人，
+        // 从而改掉别人的电池配置。认领只发生在放置方块时或潜行右键时。
         if (!blockEntity.canManage(player)) return false;
         switch (button) {
             case 0 -> blockEntity.setMode(blockEntity.getMode().next());

@@ -126,10 +126,16 @@ public class OmniBatteryBlock extends BaseEntityBlock {
         if (level.isClientSide) return;
         BlockEntity be = level.getBlockEntity(pos);
         if (be instanceof OmniBatteryBlockEntity battery && player instanceof ServerPlayer sp) {
-            // 关键：首次右键者成为主人（否则权限判定会因 ownerUuid 为空而全部放行）
-            if (battery.ensureOwner(sp)) {
-                sp.displayClientMessage(net.minecraft.network.chat.Component.literal(
-                        "你已成为这个电池的主人"), true);
+            // 认领规则：放置时自动认领；打不开主界面时可用"潜行右键"补齐认领。
+            // 普通右键只是查看/操作，绝不把别人（或公共）的电池变成自己的。
+            if (!battery.isClaimed()) {
+                if (player.isShiftKeyDown() && battery.ensureOwner(sp)) {
+                    sp.displayClientMessage(net.minecraft.network.chat.Component.literal(
+                            "你已成为这个电池的主人"), true);
+                } else {
+                    sp.displayClientMessage(net.minecraft.network.chat.Component.literal(
+                            "此电池尚未认领：潜行右键可认领为你的"), true);
+                }
             }
             sp.openMenu(battery);
         }

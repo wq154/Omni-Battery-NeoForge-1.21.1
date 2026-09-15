@@ -904,6 +904,9 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
     // ---------------- 权限（私人 / 队伍 / 公开） ----------------
 
     public BatteryAccess getAccess() { return access; }
+    /** 是否已被认领（有主人）。 */
+    public boolean isClaimed() { return ownerUuid != null; }
+
     public String getOwnerName() { return ownerName == null ? "" : ownerName; }
 
     public void setAccess(BatteryAccess a) {
