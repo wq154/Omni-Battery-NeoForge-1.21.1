@@ -29,6 +29,7 @@
   "screen.omnibattery.range": "范围",
   "key.categories.omnibattery": "万能电池",
   "key.omnibattery.show_range": "显示生效范围",
+  "key.omnibattery.open_battery": "打开绑定的电池界面（远程）",
   "message.omnibattery.range.show": "范围显示：开（准星对准电池机器或手持电池）",
   "message.omnibattery.range.hide": "范围显示：关"
 }

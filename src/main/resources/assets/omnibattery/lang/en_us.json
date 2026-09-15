@@ -29,6 +29,7 @@
   "screen.omnibattery.range": "Range",
   "key.categories.omnibattery": "Omni Battery",
   "key.omnibattery.show_range": "Show Transfer Range",
+  "key.omnibattery.open_battery": "Open Bound Battery (remote)",
   "message.omnibattery.range.show": "Range display: ON (target a battery or hold one)",
   "message.omnibattery.range.hide": "Range display: OFF"
 }

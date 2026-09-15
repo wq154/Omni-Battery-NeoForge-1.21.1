@@ -31,6 +31,10 @@ import java.util.List;
 public class MachineStickerItem extends Item {
     private static final String TAG_MODE = "StickerMode";
     private static final String TAG_AUTO = "AutoTag";
+    private static final String TAG_BX = "StickerBindX";
+    private static final String TAG_BY = "StickerBindY";
+    private static final String TAG_BZ = "StickerBindZ";
+    private static final String TAG_BD = "StickerBindDim";
     private static final Direction[] CAP_SIDES = {null, Direction.DOWN, Direction.UP, Direction.NORTH, Direction.SOUTH, Direction.WEST, Direction.EAST};
 
     public MachineStickerItem(Item.Properties props) {
@@ -67,6 +71,14 @@ public class MachineStickerItem extends Item {
         if (!player.isShiftKeyDown()) {
             player.displayClientMessage(Component.literal("\u8bf7\u6f5c\u884c\u53f3\u952e\u673a\u5668\u8d34\u6807\u7b7e\uff0c\u6f5c\u884c\u53f3\u952e\u7a7a\u6c14\u5207\u6362\u6a21\u5f0f").withStyle(ChatFormatting.GRAY), true);
             return InteractionResult.PASS;
+        }
+        // 如果右键的是电池，顺便把这块电池绑定为"快捷键目标"
+        if (level.getBlockEntity(pos) instanceof OmniBatteryBlockEntity obe && obe.canManage(player)) {
+            bind(stack, pos, level.dimension().location().toString());
+            player.displayClientMessage(Component.literal("\u5df2\u7ed1\u5b9a\u7535\u6c60\uff08\u6309\u5feb\u6377\u952e\u53ef\u968f\u65f6\u6253\u5f00\uff09: ")
+                    .withStyle(ChatFormatting.AQUA)
+                    .append(Component.literal(pos.getX() + ", " + pos.getY() + ", " + pos.getZ())
+                            .withStyle(ChatFormatting.WHITE)), true);
         }
         BlockEntity be = level.getBlockEntity(pos);
         if (be == null) {
@@ -113,9 +125,44 @@ public class MachineStickerItem extends Item {
         tooltip.add(Component.literal("\u6f5c\u884c\u53f3\u952e\u7a7a\u6c14\uff1a\u5207\u6362\u6a21\u5f0f").withStyle(ChatFormatting.GRAY));
         tooltip.add(Component.literal("\u5de6\u952e\u7a7a\u6c14\uff1a\u5207\u6362\u81ea\u52a8\u8d34\u6807\u5f00\u5173").withStyle(ChatFormatting.GRAY));
         tooltip.add(Component.literal("\u6f5c\u884c\u53f3\u952e\u673a\u5668\uff1a\u8d34\u4e0a\u5f53\u524d\u6a21\u5f0f\u6807\u7b7e").withStyle(ChatFormatting.GRAY));
+        if (hasBind(stack)) {
+            BlockPos bp = getBindPos(stack);
+            tooltip.add(Component.literal("\u5df2\u7ed1\u5b9a\u7535\u6c60\uff1a").withStyle(ChatFormatting.LIGHT_PURPLE)
+                    .append(Component.literal(bp.getX() + ", " + bp.getY() + ", " + bp.getZ())
+                            .withStyle(ChatFormatting.WHITE)));
+            tooltip.add(Component.literal("\u6309\u5feb\u6377\u952e\uff08\u9ed8\u8ba4 \u53cd\u659c\u6760 \u952e\uff0c\u53ef\u5728\u8bbe\u7f6e\u91cc\u6539\uff09\u8fdc\u7a0b\u6253\u5f00").withStyle(ChatFormatting.LIGHT_PURPLE));
+        } else {
+            tooltip.add(Component.literal("\u6f5c\u884c\u53f3\u952e\u7535\u6c60\uff1a\u7ed1\u5b9a\u4e3a\u5feb\u6377\u951a\u70b9").withStyle(ChatFormatting.DARK_GRAY));
+        }
         tooltip.add(Component.literal("\u8bbe\u7f6e\uff1a\u53ef\u653e\u5165\u9970\u54c1\u680f\u62a4\u8eab\u7b26/CHARM \u69fd\u4f4d").withStyle(ChatFormatting.LIGHT_PURPLE));
         tooltip.add(Component.literal("\u6a21\u5f0f\uff1a\u4f9b\u7535 \u2192 \u5438\u7535 \u2192 \u8fc7\u8f7d \u2192 \u6e05\u9664").withStyle(ChatFormatting.DARK_GRAY));
         tooltip.add(Component.literal("\u81ea\u52a8\u8d34\u6807\u5f00\u542f\u540e\uff0c\u673a\u5668\u653e\u7f6e\u65f6\u81ea\u52a8\u8d34\u4e0a\u5f53\u524d\u6a21\u5f0f").withStyle(ChatFormatting.DARK_GRAY));
+    }
+
+    /** 绑定快捷键目标（记录坐标 + 维度）。 */
+    public static void bind(ItemStack stack, BlockPos pos, String dim) {
+        CustomData.update(DataComponents.CUSTOM_DATA, stack, t -> {
+            t.putInt(TAG_BX, pos.getX());
+            t.putInt(TAG_BY, pos.getY());
+            t.putInt(TAG_BZ, pos.getZ());
+            t.putString(TAG_BD, dim);
+        });
+    }
+
+    /** 是否已绑定快捷键目标。 */
+    public static boolean hasBind(ItemStack stack) {
+        return stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag().contains(TAG_BX);
+    }
+
+    /** 绑定的目标坐标（未绑定则返回 null）。 */
+    public static BlockPos getBindPos(ItemStack stack) {
+        var t = stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag();
+        return t.contains(TAG_BX) ? new BlockPos(t.getInt(TAG_BX), t.getInt(TAG_BY), t.getInt(TAG_BZ)) : null;
+    }
+
+    /** 绑定的维度 id（未绑定则返回空串）。 */
+    public static String getBindDim(ItemStack stack) {
+        return stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag().getString(TAG_BD);
     }
 
     public static StickerMode getSelectedMode(ItemStack stack) {

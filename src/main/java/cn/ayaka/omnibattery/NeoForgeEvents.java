@@ -1,5 +1,6 @@
 package cn.ayaka.omnibattery;
 
+import cn.ayaka.omnibattery.network.OpenBoundBatteryPayload;
 import cn.ayaka.omnibattery.network.ToggleAutoTagPayload;
 import cn.ayaka.omnibattery.registry.ModBlocks;
 import cn.ayaka.omnibattery.registry.ModItems;
@@ -42,5 +43,7 @@ public final class NeoForgeEvents {
         PayloadRegistrar registrar = event.registrar(OmniBatteryMod.MOD_ID).versioned("1.0");
         registrar.playToServer(ToggleAutoTagPayload.TYPE, ToggleAutoTagPayload.STREAM_CODEC,
                 ToggleAutoTagPayload::handle);
+        registrar.playToServer(OpenBoundBatteryPayload.TYPE, OpenBoundBatteryPayload.STREAM_CODEC,
+                OpenBoundBatteryPayload::handle);
     }
 }
