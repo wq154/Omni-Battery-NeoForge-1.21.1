@@ -211,9 +211,9 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
                 menu.getAccessDisplay(), mouseX, mouseY, 8, "切换权限：私人 / 队伍 / 公开");
 
         // ==== 用电报告按钮（趋势标题右侧）====
-        drawChip(graphics, rightEdge - 128, y + 4, 62, 16, "切换电池",
+        drawChip(graphics, rightEdge - 128, y + TREND_TITLE_Y - 5, 62, 16, "切换电池",
                 mouseX, mouseY, OmniBatteryMenu.SWITCH_BATTERY, "切到下一块已绑定的电池");
-        drawChip(graphics, rightEdge - 62, y + 4, 62, 16, "用电配置",
+        drawChip(graphics, rightEdge - 62, y + TREND_TITLE_Y - 5, 62, 16, "用电配置",
                 mouseX, mouseY, 9, "查看/调整本维度所有打了标签的机器");
 
         // ==== 趋势图（最近吸电/供电每秒趋势）====
@@ -333,9 +333,11 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
             graphics.fill(x + 6, ry, x + W - 6, ry + 18, 0xFF8B8B8B);
             graphics.fill(x + 7, ry + 1, x + W - 7, ry + 17, 0xFF373737);
 
-            // 名字由服务端解析并同步（客户端未加载该区块时也能正确显示）
-            String name = NAMES.getOrDefault(r[0], "");
-            if (name == null || name.isEmpty()) name = "机器";
+            // 服务端只发翻译键，这里按玩家语言翻译（否则会显示服务端的 en_us 名）
+            String key = NAMES.getOrDefault(r[0], "");
+            String name = key == null || key.isEmpty()
+                    ? "机器"
+                    : net.minecraft.network.chat.Component.translatable(key).getString();
             if (name.length() > 7) name = name.substring(0, 7) + "…";
             graphics.drawString(font, name, x + 10, ry + 5, 0xFFFFFFFF, false);
 
@@ -576,11 +578,11 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
         if (isHover(mx, my, minusX, y + ROW3 + 1, BTN_PM_W, BTN_H)) return press(4);
         if (isHover(mx, my, plusX, y + ROW3 + 1, BTN_PM_W, BTN_H)) return press(3);
         // 切换电池（发按钮 id 给服务端：切到贴纸绑定的下一块电池并打开它）
-        if (isHover(mx, my, rightEdge - 128, y + 4, 62, 16)) {
+        if (isHover(mx, my, rightEdge - 128, y + TREND_TITLE_Y - 5, 62, 16)) {
             return press(OmniBatteryMenu.SWITCH_BATTERY);
         }
         // 用电配置（本地切页，不发服务端）
-        if (isHover(mx, my, rightEdge - 62, y + 4, 62, 16)) { page = 1; return true; }
+        if (isHover(mx, my, rightEdge - 62, y + TREND_TITLE_Y - 5, 62, 16)) { page = 1; return true; }
         // 玩家供电开关 + 权限（同一行）
         if (isHover(mx, my, rightEdge - 142, y + ROW7 + 1, 40, BTN_H)) return press(6);
         if (isHover(mx, my, rightEdge - 98, y + ROW7 + 1, 40, BTN_H)) return press(7);

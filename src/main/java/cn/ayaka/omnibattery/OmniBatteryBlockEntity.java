@@ -431,11 +431,12 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
             if (e == null || e.mode() == null) continue;
             // 注意：必须用 targetModeOrdinal（显示顺序 0吸电/1供电/2过载），
             // 不能用 e.mode().ordinal() —— 枚举常量的声明顺序与之不同，会导致"吸电/供电"显示互换。
-            // 机器名在服务端解析好一并同步 —— 客户端可能没有加载该区块，自己查不到方块名。
-            String nm = "机器";
+            // 只发送"翻译键"，由客户端按玩家语言翻译。
+            // 不能发 getName().getString()：服务端语言固定为 en_us，会导致名字全变英文。
+            String nm = "block.minecraft.air";
             try {
                 var st = sl.getBlockState(p);
-                if (!st.isAir()) nm = st.getBlock().getName().getString();
+                if (!st.isAir()) nm = st.getBlock().getDescriptionId();
             } catch (Throwable ignored) {
             }
             out.add(new TargetInfo(p.getX(), p.getY(), p.getZ(), targetModeOrdinal(p),
