@@ -341,15 +341,22 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
     /** 容量发生变化的记录，避免每 tick 重复写字段。 */
     private final java.util.HashMap<Long, Long> capacityApplied = new java.util.HashMap<>();
 
-    /** 把机器 BE 的容量字段强制设为 cap（反射直接写字段；找不到容量字段则什么也不做）。 */
-    private void forceCapacity(net.minecraft.world.level.block.entity.BlockEntity be, long cap) {
+    /**
+     * 把机器 BE 的容量字段强制设为 cap（反射直接写字段）。
+     *
+     * @return 是否真的改到了容量字段。返回 false 时调用方应当退化成普通过载 ——
+     *         否则玩家会看到"打上自定义后机器连基本供电都没有"。
+     */
+    private boolean forceCapacity(net.minecraft.world.level.block.entity.BlockEntity be, long cap) {
         long key = be.getBlockPos().asLong();
         Long prev = capacityApplied.get(key);
-        if (prev != null && prev == cap) return;      // 已经是这个值，无需重复写
+        if (prev != null && prev == cap) return true;      // 已经是这个值
         if (writeCapacityFields(be, cap)) {
             capacityApplied.put(key, cap);
             be.setChanged();
+            return true;
         }
+        return false;
     }
 
     /** 反射遍历类型层级，把名字像"容量"的字段写成 cap。返回是否有改动。 */
@@ -730,20 +737,31 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         if (isOwnOrOmniBatteryStorage(be, storage)) return 0;
         if (sticker == StickerMode.SUPPLY) return transferReceiveOnce(storage, request);
         if (sticker == StickerMode.CUSTOM) {
-            // 自定义 = 过载的强力传输，外加一步：先把**这台机器自己的容量**强制设成玩家设定值，
+            // 自定义 = 过载的强力传输，外加一步：把**这台机器自己的容量**强制设成玩家设定值，
             // 于是它最多只能存这么多，电池灌满它就会停 —— 不会无限吃电。
             //
-            // 关键：改容量必须走**反射直接写字段**。
-            // 早期版本用 saveWithoutMetadata + loadWithComponents 改 NBT，那等于每 tick 把整个 BE
-            // 重新反序列化，会让区块反复标脏并冲垮光照引擎（地图全黑 + 刷怪）。
+            // 关键：改容量走**反射直接写字段**。早期版本用 saveWithoutMetadata + loadWithComponents
+            // 改 NBT，等于每 tick 把整个 BE 重新反序列化，会把区块光照引擎冲垮（地图全黑 + 刷怪）。
             long cap = customCapFor(be);
-            forceCapacity(be, cap);
-            long stored = readEnergyReflective(storage);
-            if (stored < 0L) stored = storage.getEnergyStored();
-            long room = cap - stored;
-            if (room <= 0L) return 0;
-            // 传输强度与过载完全一致，只是上限被 room 卡住
-            int budget = (int) Math.min(Math.min((long) request, room), Integer.MAX_VALUE);
+            boolean applied = forceCapacity(be, cap);
+
+            int budget = request;          // 默认与过载一致
+            if (applied) {
+                long stored = readEnergyReflective(storage);
+                if (stored < 0L) stored = storage.getEnergyStored();
+                if (stored > cap) {
+                    // 机器里已有的电比设定的新容量还多：先抽掉多余的，否则它会处于"超容量"异常状态，
+                    // 连基本功能都会失效（这就是"打上自定义后机器完全没反应"的原因之一）。
+                    long excess = stored - cap;
+                    int drained = storage.extractEnergy((int) Math.min(excess, Integer.MAX_VALUE), false);
+                    stored -= Math.max(0, drained);
+                }
+                long room = cap - stored;
+                if (room <= 0L) return 0;
+                budget = (int) Math.min(Math.min((long) request, room), Integer.MAX_VALUE);
+            }
+            // 注意：找不到容量字段时（applied == false）不做任何限制，直接按过载的强度供电，
+            // 否则会出现"打上自定义之后连普通供电都没有"的现象。
             int moved = transferReceiveLoop(storage, budget);
             if (moved < budget) moved += fillEnergyReflective(storage, budget - moved);
             if (moved < budget) moved += fillEnergyNbt(level, be, budget - moved);
