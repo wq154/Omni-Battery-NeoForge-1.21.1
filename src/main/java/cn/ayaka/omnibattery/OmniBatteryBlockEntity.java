@@ -252,7 +252,9 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
                 if (be == null || be.isRemoved()) { stickerData.removeSticker(targetPos); continue; }
                 if (be instanceof OmniBatteryBlockEntity) { stickerData.removeSticker(targetPos); continue; }
                 if (!hasAnyEnergyCapability(level, be)) { stickerData.removeSticker(targetPos); continue; }
-                if (sticker != StickerMode.ABSORB && sticker != StickerMode.OVERLOAD) continue;
+                // 吸电方向支持：吸电 / 过载 / 自定义
+                if (sticker != StickerMode.ABSORB && sticker != StickerMode.OVERLOAD
+                        && sticker != StickerMode.CUSTOM) continue;
                 // 吸电不受"公开"放开：只认主人/队友，避免公开模式下吸别人机器的电
                 if (!canAbsorbSticker(stickerEntry)) continue;
                 if (sticker == StickerMode.ABSORB) {
@@ -303,7 +305,9 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
                 if (be == null || be.isRemoved()) { stickerData.removeSticker(targetPos); continue; }
                 if (be instanceof OmniBatteryBlockEntity) { stickerData.removeSticker(targetPos); continue; }
                 if (!hasAnyEnergyCapability(level, be)) { stickerData.removeSticker(targetPos); continue; }
-                if (sticker != StickerMode.SUPPLY && sticker != StickerMode.OVERLOAD) continue;
+                // 供电方向支持：供电 / 过载 / 自定义（自定义曾漏在这里，导致彻底不供电）
+                if (sticker != StickerMode.SUPPLY && sticker != StickerMode.OVERLOAD
+                        && sticker != StickerMode.CUSTOM) continue;
                 if (!canUseSticker(stickerEntry)) continue;
                 if (sticker == StickerMode.SUPPLY) {
                     // 无限档突破：对同一目标重复传输，直到预算用尽或对方已满（单次受 int 上限 21 亿限制）
