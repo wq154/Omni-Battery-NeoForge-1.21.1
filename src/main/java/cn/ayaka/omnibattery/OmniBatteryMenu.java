@@ -71,9 +71,7 @@ public class OmniBatteryMenu extends AbstractContainerMenu {
                 syncLong(15 + i * 4, blockEntity.getAbsorbHistory(i));
                 syncLong(15 + i * 4 + 2, blockEntity.getSupplyHistory(i));
             }
-        }
-        super.broadcastChanges();
-                // 用电配置页：同步本维度已打标签的机器（坐标 + 模式）
+            // 用电配置页：同步本维度已打标签的机器（坐标 + 模式）
             java.util.List<net.minecraft.core.BlockPos> cfgTargets =
                     blockEntity.stickerTargetsHere(TARGET_COUNT);
             for (int ti = 0; ti < TARGET_COUNT; ti++) {
@@ -91,7 +89,9 @@ public class OmniBatteryMenu extends AbstractContainerMenu {
                     data.set(b + 3, EMPTY_SLOT);
                 }
             }
-}
+        }
+        super.broadcastChanges();
+    }
 
     private void syncLong(int index, long value) {
         data.set(index, (int) (value & 0xFFFFFFFFL));
