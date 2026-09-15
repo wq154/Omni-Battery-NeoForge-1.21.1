@@ -365,6 +365,18 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
     }
 
 
+
+    /** 通知附近玩家：这台机器吞电不存，已停止过载供电，建议改用【供电】标签。 */
+    private void notifyVoidTarget(Level level, net.minecraft.core.BlockPos pos) {
+        if (!(level instanceof net.minecraft.server.level.ServerLevel sl)) return;
+        net.minecraft.network.chat.Component msg = net.minecraft.network.chat.Component.literal(
+                "⚠ 该机器吞电不存（接受能量却不保留），已停止过载供电；建议把它改贴【供电】标签");
+        for (net.minecraft.server.level.ServerPlayer p : sl.getPlayers(pl ->
+                pl.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) < 64.0 * 64.0)) {
+            p.displayClientMessage(msg, false);
+        }
+    }
+
     /** 硬灌无效（电被机器丢弃/存不住）的目标；拉黑后不再对它硬灌，避免变成无底洞。 */
     private final java.util.HashSet<Long> overloadVoidTargets = new java.util.HashSet<>();
 
@@ -414,9 +426,12 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
                 }
                 if (extra > 0) {
                     long after = probeEnergy(storage);
-                    if (before >= 0L && after >= 0L && after <= before) {
+                    // 只有"确认电真的进到机器里"（after 明确大于 before）才算成功；
+                    // 读不到能量或没有增长，一律按"吞电不存"处理（宁可拉黑，也不做无底洞）。
+                    if (!(before >= 0L && after >= 0L && after > before)) {
                         energyStorage.receiveEnergy(extra, false);   // 退回电池
                         overloadVoidTargets.add(key);                // 拉黑：不再白送
+                        notifyVoidTarget(level, be.getBlockPos());   // 提示附近玩家改用供电标签
                     } else {
                         moved += extra;
                     }
