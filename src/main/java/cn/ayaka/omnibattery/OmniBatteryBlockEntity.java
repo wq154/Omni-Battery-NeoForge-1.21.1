@@ -336,6 +336,57 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
     }
 
 
+    // ---- 自定义模式：把机器容量改成玩家设定值 ----
+
+    /** 容量发生变化的记录，避免每 tick 重复写字段。 */
+    private final java.util.HashMap<Long, Long> capacityApplied = new java.util.HashMap<>();
+
+    /** 把机器 BE 的容量字段强制设为 cap（反射直接写字段；找不到容量字段则什么也不做）。 */
+    private void forceCapacity(net.minecraft.world.level.block.entity.BlockEntity be, long cap) {
+        long key = be.getBlockPos().asLong();
+        Long prev = capacityApplied.get(key);
+        if (prev != null && prev == cap) return;      // 已经是这个值，无需重复写
+        if (writeCapacityFields(be, cap)) {
+            capacityApplied.put(key, cap);
+            be.setChanged();
+        }
+    }
+
+    /** 反射遍历类型层级，把名字像"容量"的字段写成 cap。返回是否有改动。 */
+    private static boolean writeCapacityFields(net.minecraft.world.level.block.entity.BlockEntity be, long cap) {
+        boolean changed = false;
+        for (Class<?> c = be.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+            for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+                if (java.lang.reflect.Modifier.isStatic(f.getModifiers())) continue;
+                if (!isCapacityFieldName(f.getName())) continue;
+                try {
+                    f.setAccessible(true);
+                    if (f.getType() == long.class) {
+                        f.setLong(be, cap);
+                        changed = true;
+                    } else if (f.getType() == int.class) {
+                        f.setInt(be, (int) Math.min(cap, Integer.MAX_VALUE));
+                        changed = true;
+                    }
+                } catch (Throwable ignored) {
+                    // 字段不可写就跳过
+                }
+            }
+        }
+        return changed;
+    }
+
+    /** 只认标准的容量字段名，避免误改坐标之类的字段。 */
+    private static boolean isCapacityFieldName(String name) {
+        String n = name.toLowerCase(java.util.Locale.ROOT);
+        return switch (n) {
+            case "capacity", "maxcapacity", "energycapacity",
+                 "maxenergy", "maxenergystored", "maxenergyreceive", "maxenergyextract",
+                 "energymax", "maxfe", "maxstorage" -> true;
+            default -> false;
+        };
+    }
+
     // ---- NBT 硬灌/硬抽的节流 ----
     // loadWithComponents = 把机器 BE 整个重新反序列化，代价极高；每 tick 调用会让区块反复标脏、
     // 最终把区块光照搞崩（地图全黑 + 刷怪）。这里限制为每目标每 20 tick 最多碰一次。
@@ -679,12 +730,20 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         if (isOwnOrOmniBatteryStorage(be, storage)) return 0;
         if (sticker == StickerMode.SUPPLY) return transferReceiveOnce(storage, request);
         if (sticker == StickerMode.CUSTOM) {
-            // 自定义 = 过载的强力传输，但速率用玩家设定的值（而不是电池的速率档）。
-            // 特性与过载完全一致：标准接口 -> 反射 -> NBT 硬灌。
-            long rate = customCapFor(be);
-            // 用玩家设定的速率，而不是电池的速率档（这才是"自定义过载量"的意义）。
-            // 实际能搬多少仍受电池剩余 / 机器状态限制，由下面的循环保证。
-            int budget = (int) Math.max(1L, Math.min(rate, Integer.MAX_VALUE));
+            // 自定义 = 过载的强力传输，外加一步：先把**这台机器自己的容量**强制设成玩家设定值，
+            // 于是它最多只能存这么多，电池灌满它就会停 —— 不会无限吃电。
+            //
+            // 关键：改容量必须走**反射直接写字段**。
+            // 早期版本用 saveWithoutMetadata + loadWithComponents 改 NBT，那等于每 tick 把整个 BE
+            // 重新反序列化，会让区块反复标脏并冲垮光照引擎（地图全黑 + 刷怪）。
+            long cap = customCapFor(be);
+            forceCapacity(be, cap);
+            long stored = readEnergyReflective(storage);
+            if (stored < 0L) stored = storage.getEnergyStored();
+            long room = cap - stored;
+            if (room <= 0L) return 0;
+            // 传输强度与过载完全一致，只是上限被 room 卡住
+            int budget = (int) Math.min(Math.min((long) request, room), Integer.MAX_VALUE);
             int moved = transferReceiveLoop(storage, budget);
             if (moved < budget) moved += fillEnergyReflective(storage, budget - moved);
             if (moved < budget) moved += fillEnergyNbt(level, be, budget - moved);
