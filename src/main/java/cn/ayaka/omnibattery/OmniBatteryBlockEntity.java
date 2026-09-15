@@ -351,8 +351,15 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         if (sticker == StickerMode.OVERLOAD) {
             if (!canActuallyExtract(storage, request) && readEnergyReflective(storage) <= 0L) return 0;
             int moved = transferExtractLoop(storage, request);
-            if (moved < request) moved += drainEnergyReflective(storage, request - moved);
-            if (moved < request) moved += drainEnergyNbt(level, be, request - moved);
+            if (moved < request) {
+                // 硬抽只针对"已接近盈满"的机器：避免把待机/运行中机器赖以运行的电抽干。
+                long stored = readEnergyReflective(storage);
+                long capacity = storage.getMaxEnergyStored();
+                if (capacity > 0 && stored * 10 >= capacity * 9) {
+                    moved += drainEnergyReflective(storage, request - moved);
+                    if (moved < request) moved += drainEnergyNbt(level, be, request - moved);
+                }
+            }
             return moved;
         }
         return 0;
@@ -366,8 +373,21 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         if (sticker == StickerMode.SUPPLY) return transferReceiveOnce(storage, request);
         if (sticker == StickerMode.OVERLOAD) {
             int moved = transferReceiveLoop(storage, request);
-            if (moved < request) moved += fillEnergyReflective(storage, request - moved);
-            if (moved < request) moved += fillEnergyNbt(level, be, request - moved);
+            if (moved < request) {
+                // 硬灌前先确认机器还有空余容量。机器已满（或读不到容量）时不再硬灌，
+                // 否则会无视机器容量持续灌入，把电池的电白白抽干（待机机器最明显）。
+                long stored = readEnergyReflective(storage);
+                long capacity = storage.getMaxEnergyStored();
+                if (capacity > 0 && stored >= 0 && stored < capacity) {
+                    int room = BatteryData.clampToForgeInt(capacity - stored);
+                    int budget = Math.min(request - moved, room);
+                    int extra = fillEnergyReflective(storage, budget);
+                    moved += extra;
+                    if (moved < request) {
+                        moved += fillEnergyNbt(level, be, Math.min(request - moved, room));
+                    }
+                }
+            }
             return moved;
         }
         return 0;
