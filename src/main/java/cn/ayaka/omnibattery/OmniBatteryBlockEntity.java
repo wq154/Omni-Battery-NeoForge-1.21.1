@@ -336,6 +336,23 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
     }
 
 
+    // ---- NBT 硬灌/硬抽的节流 ----
+    // loadWithComponents = 把机器 BE 整个重新反序列化，代价极高；每 tick 调用会让区块反复标脏、
+    // 最终把区块光照搞崩（地图全黑 + 刷怪）。这里限制为每目标每 20 tick 最多碰一次。
+    private static final int NBT_TOUCH_COOLDOWN = 20;
+    private final java.util.HashMap<Long, Long> nbtTouchTick = new java.util.HashMap<>();
+
+    /** 是否允许对这一目标做 NBT 级别的硬灌/硬抽（带冷却）。 */
+    private boolean mayTouchNbt(net.minecraft.core.BlockPos pos) {
+        if (pos == null || level == null) return false;
+        long now = level.getGameTime();
+        long k = pos.asLong();
+        Long last = nbtTouchTick.get(k);
+        if (last != null && now - last < NBT_TOUCH_COOLDOWN) return false;
+        nbtTouchTick.put(k, now);
+        return true;
+    }
+
     /** 记录某个目标机器本次传输量（分吸/供两个方向），用于用电配置界面。 */
     /** 该目标在贴纸表里登记的"自定义容量上限"。 */
     private long customCapFor(net.minecraft.world.level.block.entity.BlockEntity be) {
@@ -346,61 +363,8 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         return 1_000_000L;
     }
 
-    /**
-     * 把机器自身 NBT 里的"容量"字段改成 cap，并返回还能装多少（room）。
-     * 只动名字看起来是容量（capacity / max*）且数值没有荒谬到像坐标的字段，
-     * 避免误伤别的数据。
-     */
-    private int applyCustomCapacity(net.minecraft.world.level.Level lvl,
-                                    net.minecraft.world.level.block.entity.BlockEntity be,
-                                    IEnergyStorage storage, long cap) {
-        try {
-            var provider = lvl.registryAccess();
-            net.minecraft.nbt.CompoundTag tag = be.saveWithoutMetadata(provider);
-            boolean changed = patchCapacityFields(tag, cap);
-            if (changed) {
-                be.loadWithComponents(tag, provider);
-                be.setChanged();
-            }
-        } catch (Throwable ignored) {
-        }
-        long stored = storage.getEnergyStored();
-        long room = cap - stored;
-        if (room <= 0) return 0;
-        return (int) Math.min(Integer.MAX_VALUE, room);
-    }
-
-    /** 递归把 NBT 里疑似"容量"的长整型字段收紧到 cap。返回是否有改动。 */
-    private static boolean patchCapacityFields(net.minecraft.nbt.CompoundTag tag, long cap) {
-        boolean changed = false;
-        for (String key : new java.util.ArrayList<>(tag.getAllKeys())) {
-            String k = key.toLowerCase(java.util.Locale.ROOT);
-            if (tag.contains(key, 4)) {          // int
-                int v = tag.getInt(key);
-                if (isCapacityKey(k) && v > 0 && v != (int) cap && Math.abs(v) < 1_000_000_000) {
-                    tag.putInt(key, (int) Math.min(cap, Integer.MAX_VALUE));
-                    changed = true;
-                }
-            } else if (tag.contains(key, 3)) {   // long
-                long v = tag.getLong(key);
-                if (isCapacityKey(k) && v > 0 && v != cap && v < 1_000_000_000_000L) {
-                    tag.putLong(key, cap);
-                    changed = true;
-                }
-            }
-        }
-        return changed;
-    }
-
-    /** 只认这些标准的"容量"字段名，避免误改别的模组的任意 NBT（曾因太宽松而风险过高）。 */
-    private static boolean isCapacityKey(String k) {
-        return switch (k) {
-            case "capacity", "maxcapacity", "energycapacity",
-                 "maxenergy", "maxenergystored", "maxenergyreceive", "maxenergyextract",
-                 "energymax", "maxfe", "maxstorage" -> true;
-            default -> false;
-        };
-    }
+    /** 自定义模式的记账表：目标坐标 -> 已累计灌入的电量（FE）。 */
+    private final java.util.HashMap<Long, Long> customFilled = new java.util.HashMap<>();
 
     private void trackTargetMove(BlockPos pos, int moved, boolean absorbing) {
         if (pos == null || moved <= 0) return;
@@ -715,15 +679,25 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         if (isOwnOrOmniBatteryStorage(be, storage)) return 0;
         if (sticker == StickerMode.SUPPLY) return transferReceiveOnce(storage, request);
         if (sticker == StickerMode.CUSTOM) {
-            // 自定义：先按标签设定值收紧机器自身的能量容量（改它 NBT 里的容量字段），
-            // 再只灌到该容量为止 —— 这样就不会无限吃电了。
+            // 自定义 = 给这台机器一个"累计供电上限"，达到就停，所以永远不会无限吃电。
+            //
+            // 重要：这里**绝不能**去改机器自身的 NBT（历史上的做法是 saveWithoutMetadata +
+            // loadWithComponents 把"容量"字段改小）。那样等于每 tick 把机器 BE 整个重新反序列化，
+            // 会重置机器内部状态、让区块反复标脏，最终把区块光照搞崩 —— 表现就是地图一片漆黑、
+            // 四处刷怪（区块光照等级掉到 0）。改成只在自己的表里记账，零副作用。
             long cap = customCapFor(be);
-            int room = applyCustomCapacity(level, be, storage, cap);
-            if (room <= 0) return 0;
-            int budget = Math.min(request, room);
+            long key = be.getBlockPos().asLong();
+            long already = customFilled.getOrDefault(key, 0L);
+            long left = cap - already;
+            if (left <= 0L) return 0;
+            int budget = (int) Math.min(request, left);
             int moved = transferReceiveLoop(storage, budget);
             if (moved < budget) moved += fillEnergyReflective(storage, budget - moved);
             if (moved < budget) moved += fillEnergyNbt(level, be, budget - moved);
+            if (moved > 0) {
+                customFilled.merge(key, (long) moved, Long::sum);
+                setChanged();
+            }
             return moved;
         }
         if (sticker == StickerMode.OVERLOAD) {
@@ -801,6 +775,8 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
     // ------------------------------------------------------------ OVERLOAD锛歂BT 娉ㄥ叆
 
     private int drainEnergyNbt(Level level, BlockEntity be, int request) {
+        // 节流：NBT 硬灌/硬抽会重载整个 BE，过于频繁会破坏区块光照
+        if (!mayTouchNbt(be.getBlockPos())) return 0;
         if (request <= 0 || be == null || be instanceof OmniBatteryBlockEntity) return 0;
         try {
             CompoundTag tag = be.saveWithId(level.registryAccess());
@@ -826,6 +802,8 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
     }
 
     private int fillEnergyNbt(Level level, BlockEntity be, int request) {
+        // 节流：NBT 硬灌/硬抽会重载整个 BE，过于频繁会破坏区块光照
+        if (!mayTouchNbt(be.getBlockPos())) return 0;
         if (request <= 0 || be == null || be instanceof OmniBatteryBlockEntity) return 0;
         try {
             int extracted = energyStorage.extractEnergy(request, true);
