@@ -71,6 +71,10 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
     private int range;
     private int tickCount;
 
+    // ---- 用电报告：记录每个目标机器最近一秒的实际传输量（排查"谁在吃电"）----
+    private final java.util.HashMap<Long, Long> targetMovedThisSecond = new java.util.HashMap<>();
+    private final java.util.HashMap<Long, Long> targetMovedLastSecond = new java.util.HashMap<>();
+
     // ---- 实时速率统计（每 20 tick = 1 秒归零并冻结一次，供 GUI 显示）----
     private long absorbedThisSecond;
     private long suppliedThisSecond;
@@ -193,6 +197,10 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
             be.recordHistory(be.lastAbsorbed, be.lastSupplied);
             be.absorbedThisSecond = 0;
             be.suppliedThisSecond = 0;
+            // 冻结各目标的本秒传输量（用电报告用）
+            be.targetMovedLastSecond.clear();
+            be.targetMovedLastSecond.putAll(be.targetMovedThisSecond);
+            be.targetMovedThisSecond.clear();
             be.secondTick = 0;
             be.syncToClients();   // 同步 BE 本体（NBT 含 LastAbsorbed/LastSupplied）
             // 关键：同步 Menu 的 data slots（GUI 显示源），否则客户端读不到新速率
@@ -249,6 +257,7 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
                         int c = (int) Math.min(remaining, Integer.MAX_VALUE);
                         int moved = tryAbsorbFromFirstSide(level, be, c, sticker);
                         if (moved <= 0) break;
+                        trackTargetMove(be.getBlockPos(), moved);
                         remaining -= moved;
                     }
                     continue;
@@ -260,6 +269,7 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
                         int c = (int) Math.min(remaining, Integer.MAX_VALUE);
                         int moved = tryAbsorbFrom(level, be, dir, c, sticker);
                         if (moved <= 0) break;
+                        trackTargetMove(be.getBlockPos(), moved);
                         remaining -= moved;
                     }
                 }
@@ -297,6 +307,7 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
                         int c = (int) Math.min(remaining, Integer.MAX_VALUE);
                         int moved = trySupplyToFirstSide(level, be, c, sticker);
                         if (moved <= 0) break;
+                        trackTargetMove(be.getBlockPos(), moved);
                         remaining -= moved;
                     }
                     continue;
@@ -308,6 +319,7 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
                         int c = (int) Math.min(remaining, Integer.MAX_VALUE);
                         int moved = trySupplyTo(level, be, dir, c, sticker);
                         if (moved <= 0) break;
+                        trackTargetMove(be.getBlockPos(), moved);
                         remaining -= moved;
                     }
                 }
@@ -316,6 +328,45 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         }
         if (remaining < start) setChanged();
         return start - remaining;
+    }
+
+
+    /** 记录某个目标机器本次传输量（吸/供都算），用于用电报告。 */
+    private void trackTargetMove(BlockPos pos, int moved) {
+        if (pos == null || moved <= 0) return;
+        targetMovedThisSecond.merge(pos.asLong(), (long) moved, Long::sum);
+    }
+
+    /**
+     * 用电报告：按最近一秒的实际传输量降序列出各目标机器。
+     * 供玩家排查"电池被谁抽干的"。
+     */
+    public java.util.List<String> drainReport() {
+        java.util.List<java.util.Map.Entry<Long, Long>> list =
+                new java.util.ArrayList<>(targetMovedLastSecond.entrySet());
+        list.removeIf(e -> e.getValue() == null || e.getValue() <= 0L);
+        list.sort((a, b) -> Long.compare(b.getValue(), a.getValue()));
+        java.util.List<String> out = new java.util.ArrayList<>();
+        int shown = 0;
+        for (java.util.Map.Entry<Long, Long> e : list) {
+            if (++shown > 10) {
+                out.add("... 其余 " + (list.size() - 10) + " 个目标未显示");
+                break;
+            }
+            BlockPos p = BlockPos.of(e.getKey());
+            String name = "未知机器";
+            if (level != null) {
+                BlockState st = level.getBlockState(p);
+                if (!st.isAir()) name = st.getBlock().getName().getString();
+            }
+            boolean voidTarget = overloadVoidTargets.contains(e.getKey());
+            out.add(shown + ". " + name + " @ " + p.getX() + "," + p.getY() + "," + p.getZ()
+                    + " — " + e.getValue() + " FE/s" + (voidTarget ? "  ⚠吞电不存" : ""));
+        }
+        if (out.isEmpty()) {
+            out.add("（最近一秒没有机器从本电池取电或送电）");
+        }
+        return out;
     }
 
     private boolean hasAnyEnergyCapability(Level level, BlockEntity be) {

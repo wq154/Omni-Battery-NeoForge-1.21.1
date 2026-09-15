@@ -190,6 +190,10 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
         drawChip(graphics, rightEdge - 54, y + ROW7 + 1, 54, BTN_H,
                 menu.getAccessDisplay(), mouseX, mouseY, 8, "切换权限：私人 / 队伍 / 公开");
 
+        // ==== 用电报告按钮（趋势标题右侧）====
+        drawChip(graphics, rightEdge - 62, y + TREND_TITLE_Y - 5, 62, 14, "用电报告",
+                mouseX, mouseY, 9, "列出正在从本电池取电的机器（按取电量排序）");
+
         // ==== 趋势图（最近吸电/供电每秒趋势）====
         drawTrend(graphics, x, y);
 
@@ -340,6 +344,8 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
         // 范围
         if (isHover(mx, my, minusX, y + ROW3 + 1, BTN_PM_W, BTN_H)) return press(4);
         if (isHover(mx, my, plusX, y + ROW3 + 1, BTN_PM_W, BTN_H)) return press(3);
+        // 用电报告
+        if (isHover(mx, my, rightEdge - 62, y + TREND_TITLE_Y - 5, 62, 14)) return press(9);
         // 玩家供电开关 + 权限（同一行）
         if (isHover(mx, my, rightEdge - 142, y + ROW7 + 1, 40, BTN_H)) return press(6);
         if (isHover(mx, my, rightEdge - 98, y + ROW7 + 1, 40, BTN_H)) return press(7);
