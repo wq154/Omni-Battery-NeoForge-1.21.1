@@ -4,6 +4,7 @@ public enum StickerMode {
     SUPPLY("\u4f9b\u7535", "Supply"),
     ABSORB("\u5438\u7535", "Absorb"),
     OVERLOAD("\u8fc7\u8f7d", "Overload"),
+    CUSTOM("\u81ea\u5b9a\u4e49", "Custom"),
     CLEAR("\u6e05\u9664", "Clear");
 
     private final String displayZh;
@@ -17,5 +18,5 @@ public enum StickerMode {
         return v[(ordinal() + 1) % v.length];
     }
 
-    public boolean isActiveTransferMode() { return this == SUPPLY || this == ABSORB || this == OVERLOAD; }
+    public boolean isActiveTransferMode() { return this == SUPPLY || this == ABSORB || this == OVERLOAD || this == CUSTOM; }
 }

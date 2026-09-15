@@ -406,7 +406,7 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
             graphics.drawString(font, rate, x + 78, ry + 5,
                     (ab > 0 ? 0xFFFFA640 : (su > 0 ? 0xFF6AE8E0 : 0xFF6E7076)), false);
 
-            String[] modes = {"吸电", "供电", "过载"};
+            String[] modes = {"吸电", "供电", "过载", "自定义"};
             String modeName = r[4] >= 0 && r[4] < modes.length ? modes[r[4]] : "?";
             drawChip(graphics, x + W - 52, ry + 1, 44, 16,
                     modeName + (openDropdown == r[0] ? "▲" : "▼"),
@@ -423,7 +423,7 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
                 int[] r = view.get(start + row);
                 if (r[0] != openDropdown) continue;
                 int ry = y + CFG_ROW0 + row * CFG_ROW_H;
-                String[] opts = {"吸电", "供电", "过载", "清除标签"};
+                String[] opts = {"吸电", "供电", "过载", "自定义", "清除标签"};
                 int h = opts.length * 14;
                 boolean up = (ry + 18 + h) > (y + H - 20);
                 int top = up ? (ry - h) : (ry + 18);
@@ -599,7 +599,7 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
                         if (isHover(mx, my, x + W - 74, oy, 70, 14)) {
                             int snapIdx = r[0];
                             openDropdown = -1;
-                            return press(400 + snapIdx * 4 + k);
+                            return press(400 + snapIdx * 5 + k);
                         }
                     }
                     break;

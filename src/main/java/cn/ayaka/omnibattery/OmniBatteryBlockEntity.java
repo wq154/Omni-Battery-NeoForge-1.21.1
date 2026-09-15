@@ -337,6 +337,66 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
 
 
     /** 记录某个目标机器本次传输量（分吸/供两个方向），用于用电配置界面。 */
+    /** 该目标在贴纸表里登记的"自定义容量上限"。 */
+    private long customCapFor(net.minecraft.world.level.block.entity.BlockEntity be) {
+        if (level instanceof net.minecraft.server.level.ServerLevel sl) {
+            StickerSavedData.StickerEntry e = StickerSavedData.get(sl).getEntry(be.getBlockPos());
+            if (e != null && e.customCap() > 0L) return e.customCap();
+        }
+        return 1_000_000L;
+    }
+
+    /**
+     * 把机器自身 NBT 里的"容量"字段改成 cap，并返回还能装多少（room）。
+     * 只动名字看起来是容量（capacity / max*）且数值没有荒谬到像坐标的字段，
+     * 避免误伤别的数据。
+     */
+    private int applyCustomCapacity(net.minecraft.world.level.Level lvl,
+                                    net.minecraft.world.level.block.entity.BlockEntity be,
+                                    IEnergyStorage storage, long cap) {
+        try {
+            var provider = lvl.registryAccess();
+            net.minecraft.nbt.CompoundTag tag = be.saveWithoutMetadata(provider);
+            boolean changed = patchCapacityFields(tag, cap);
+            if (changed) {
+                be.loadWithComponents(tag, provider);
+                be.setChanged();
+            }
+        } catch (Throwable ignored) {
+        }
+        long stored = storage.getEnergyStored();
+        long room = cap - stored;
+        if (room <= 0) return 0;
+        return (int) Math.min(Integer.MAX_VALUE, room);
+    }
+
+    /** 递归把 NBT 里疑似"容量"的长整型字段收紧到 cap。返回是否有改动。 */
+    private static boolean patchCapacityFields(net.minecraft.nbt.CompoundTag tag, long cap) {
+        boolean changed = false;
+        for (String key : new java.util.ArrayList<>(tag.getAllKeys())) {
+            String k = key.toLowerCase(java.util.Locale.ROOT);
+            if (tag.contains(key, 4)) {          // int
+                int v = tag.getInt(key);
+                if (isCapacityKey(k) && v > 0 && v != (int) cap && Math.abs(v) < 1_000_000_000) {
+                    tag.putInt(key, (int) Math.min(cap, Integer.MAX_VALUE));
+                    changed = true;
+                }
+            } else if (tag.contains(key, 3)) {   // long
+                long v = tag.getLong(key);
+                if (isCapacityKey(k) && v > 0 && v != cap && v < 1_000_000_000_000L) {
+                    tag.putLong(key, cap);
+                    changed = true;
+                }
+            }
+        }
+        return changed;
+    }
+
+    private static boolean isCapacityKey(String k) {
+        return (k.contains("cap") || k.contains("max"))
+                && !k.contains("x") && !k.contains("y") && !k.contains("z");
+    }
+
     private void trackTargetMove(BlockPos pos, int moved, boolean absorbing) {
         if (pos == null || moved <= 0) return;
         if (absorbing) {
@@ -486,7 +546,8 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
             case 0 -> StickerMode.ABSORB;
             case 1 -> StickerMode.SUPPLY;
             case 2 -> StickerMode.OVERLOAD;
-            default -> null;
+            case 3 -> StickerMode.CUSTOM;
+            default -> null;   // 4 = 清除标签
         };
         return setTargetMode(new BlockPos(t.x(), t.y(), t.z()), mode, player);
     }
@@ -513,6 +574,7 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         return switch (e.mode()) {
             case ABSORB -> 0;
             case SUPPLY -> 1;
+            case CUSTOM -> 3;
             default -> 2;
         };
     }
@@ -630,6 +692,18 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         if (storage == null) return 0;
         if (isOwnOrOmniBatteryStorage(be, storage)) return 0;
         if (sticker == StickerMode.SUPPLY) return transferReceiveOnce(storage, request);
+        if (sticker == StickerMode.CUSTOM) {
+            // 自定义：先按标签设定值收紧机器自身的能量容量（改它 NBT 里的容量字段），
+            // 再只灌到该容量为止 —— 这样就不会无限吃电了。
+            long cap = customCapFor(be);
+            int room = applyCustomCapacity(level, be, storage, cap);
+            if (room <= 0) return 0;
+            int budget = Math.min(request, room);
+            int moved = transferReceiveLoop(storage, budget);
+            if (moved < budget) moved += fillEnergyReflective(storage, budget - moved);
+            if (moved < budget) moved += fillEnergyNbt(level, be, budget - moved);
+            return moved;
+        }
         if (sticker == StickerMode.OVERLOAD) {
             // 过载 = 强力双向：标准接口之后再用反射 / NBT 灌满（恢复原有行为）
             int moved = transferReceiveLoop(storage, request);

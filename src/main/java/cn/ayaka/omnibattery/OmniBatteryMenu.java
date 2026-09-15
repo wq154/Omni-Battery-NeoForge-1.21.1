@@ -144,7 +144,7 @@ public class OmniBatteryMenu extends AbstractContainerMenu {
                     return true;
                 }
                 if (button >= 400 && button < 4000) {
-                    return applyTargetOption((button - 400) / 4, (button - 400) % 4, player);
+                    return applyTargetOption((button - 400) / 5, (button - 400) % 5, player);
                 }
                 if (button == 700) {     // 交换正/反序（纯客户端操作，这里只是兜底）
                     return true;

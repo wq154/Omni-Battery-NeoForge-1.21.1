@@ -83,6 +83,7 @@ public final class AutoStickerHandler {
             case SUPPLY -> net.minecraft.ChatFormatting.GREEN;
             case ABSORB -> net.minecraft.ChatFormatting.YELLOW;
             case OVERLOAD -> net.minecraft.ChatFormatting.RED;
+            case CUSTOM -> net.minecraft.ChatFormatting.GOLD;
             case CLEAR -> net.minecraft.ChatFormatting.GRAY;
         };
     }

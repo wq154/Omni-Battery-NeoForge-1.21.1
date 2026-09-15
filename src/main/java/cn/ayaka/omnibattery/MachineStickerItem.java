@@ -37,6 +37,7 @@ public class MachineStickerItem extends Item {
     private static final String TAG_BY = "StickerBindY";
     private static final String TAG_BZ = "StickerBindZ";
     private static final String TAG_BD = "StickerBindDim";
+    private static final String TAG_CAP = "StickerCustomCap";   // 自定义模式的容量上限
     private static final Direction[] CAP_SIDES = {null, Direction.DOWN, Direction.UP, Direction.NORTH, Direction.SOUTH, Direction.WEST, Direction.EAST};
 
     public MachineStickerItem(Item.Properties props) {
@@ -52,6 +53,14 @@ public class MachineStickerItem extends Item {
         if (!player.isShiftKeyDown()) {
             player.displayClientMessage(Component.literal("\u6f5c\u884c\u53f3\u952e\u7a7a\u6c14\uff1a\u5207\u6362\u6807\u7b7e\u6a21\u5f0f").withStyle(ChatFormatting.GRAY), true);
             return InteractionResultHolder.fail(stack);
+        }
+        if (getSelectedMode(stack) == StickerMode.CUSTOM) {
+            // 已经是"自定义"模式：在客户端弹出数值输入框（服务端只负责保存）
+            if (level.isClientSide) {
+                net.minecraft.client.Minecraft.getInstance()
+                        .setScreen(new cn.ayaka.omnibattery.client.CustomCapScreen(stack));
+            }
+            return InteractionResultHolder.success(stack);
         }
         StickerMode next = getSelectedMode(stack).next();
         setSelectedMode(stack, next);
@@ -98,7 +107,8 @@ public class MachineStickerItem extends Item {
             data.removeSticker(pos);
             player.displayClientMessage(Component.literal("\u5df2\u6e05\u9664\u673a\u5668\u6807\u7b7e").withStyle(ChatFormatting.GRAY), true);
         } else {
-            data.setMode(pos, mode, player.getUUID(), player.getGameProfile().getName());
+            // 贴标签时把"自定义"容量上限一并记录（仅 CUSTOM 模式有意义）
+            data.setMode(pos, mode, player.getUUID(), player.getGameProfile().getName(), getCustomCap(stack));
             player.displayClientMessage(
                     Component.literal("\u5df2\u8d34\u6807\u7b7e: ").withStyle(ChatFormatting.AQUA)
                             .append(Component.literal(mode.displayZh()).withStyle(colorOf(mode))), true);
@@ -138,7 +148,12 @@ public class MachineStickerItem extends Item {
             tooltip.add(Component.literal("\u6f5c\u884c\u53f3\u952e\u7535\u6c60\uff1a\u7ed1\u5b9a\u4e3a\u5feb\u6377\u951a\u70b9").withStyle(ChatFormatting.DARK_GRAY));
         }
         tooltip.add(Component.literal("\u8bbe\u7f6e\uff1a\u53ef\u653e\u5165\u9970\u54c1\u680f\u62a4\u8eab\u7b26/CHARM \u69fd\u4f4d").withStyle(ChatFormatting.LIGHT_PURPLE));
-        tooltip.add(Component.literal("\u6a21\u5f0f\uff1a\u4f9b\u7535 \u2192 \u5438\u7535 \u2192 \u8fc7\u8f7d \u2192 \u6e05\u9664").withStyle(ChatFormatting.DARK_GRAY));
+        if (mode == StickerMode.CUSTOM) {
+            tooltip.add(Component.literal("\u81ea\u5b9a\u4e49\u5bb9\u91cf\uff1a" + getCustomCap(stack) + " FE")
+                    .withStyle(ChatFormatting.GOLD));
+            tooltip.add(Component.literal("\u6f5c\u884c\u53f3\u952e\u7a7a\u6c14\uff1a\u4fee\u6539\u6570\u503c").withStyle(ChatFormatting.GRAY));
+        }
+        tooltip.add(Component.literal("\u6a21\u5f0f\uff1a\u4f9b\u7535 \u2192 \u5435\u7535 \u2192 \u8fc7\u8f7d \u2192 \u81ea\u5b9a\u4e49 \u2192 \u6e05\u9664").withStyle(ChatFormatting.DARK_GRAY));
         tooltip.add(Component.literal("\u81ea\u52a8\u8d34\u6807\u5f00\u542f\u540e\uff0c\u673a\u5668\u653e\u7f6e\u65f6\u81ea\u52a8\u8d34\u4e0a\u5f53\u524d\u6a21\u5f0f").withStyle(ChatFormatting.DARK_GRAY));
     }
 
@@ -232,6 +247,17 @@ public class MachineStickerItem extends Item {
         return (String) all.get(Math.max(0, getBindIndex(stack)))[3];
     }
 
+    /** 自定义容量上限（FE）。默认 100 万。 */
+    public static long getCustomCap(ItemStack stack) {
+        long v = stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag().getLong(TAG_CAP);
+        return v > 0L ? v : 1_000_000L;
+    }
+
+    public static void setCustomCap(ItemStack stack, long value) {
+        long v = Math.max(1L, Math.min(Long.MAX_VALUE / 4, value));
+        CustomData.update(DataComponents.CUSTOM_DATA, stack, t -> t.putLong(TAG_CAP, v));
+    }
+
     public static StickerMode getSelectedMode(ItemStack stack) {
         int idx = stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag().getInt(TAG_MODE);
         StickerMode[] values = StickerMode.values();
@@ -256,6 +282,7 @@ public class MachineStickerItem extends Item {
             case SUPPLY -> ChatFormatting.GREEN;
             case ABSORB -> ChatFormatting.YELLOW;
             case OVERLOAD -> ChatFormatting.RED;
+            case CUSTOM -> ChatFormatting.GOLD;
             case CLEAR -> ChatFormatting.GRAY;
         };
     }

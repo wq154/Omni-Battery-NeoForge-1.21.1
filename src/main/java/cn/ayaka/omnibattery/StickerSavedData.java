@@ -30,7 +30,8 @@ public class StickerSavedData extends SavedData {
             data.stickers.put(pos.immutable(), new StickerEntry(
                     StickerMode.values()[modeIdx],
                     parseUUID(entry.getString("owner")),
-                    entry.getString("ownerName")));
+                    entry.getString("ownerName"),
+                    entry.getLong("customCap")));
         }
         return data;
     }
@@ -46,6 +47,7 @@ public class StickerSavedData extends SavedData {
             t.putInt("mode", e.getValue().mode().ordinal());
             if (e.getValue().owner() != null) t.putString("owner", e.getValue().owner().toString());
             if (e.getValue().ownerName() != null) t.putString("ownerName", e.getValue().ownerName());
+            if (e.getValue().customCap() > 0L) t.putLong("customCap", e.getValue().customCap());
             list.add(t);
         }
         tag.put("stickers", list);
@@ -71,10 +73,17 @@ public class StickerSavedData extends SavedData {
     }
 
     public void setMode(BlockPos pos, StickerMode mode, UUID owner, String ownerName) {
+        setMode(pos, mode, owner, ownerName, 0L);
+    }
+
+    /** 带自定义容量上限的写入（customCap 仅 CUSTOM 模式有意义）。 */
+    public void setMode(BlockPos pos, StickerMode mode, UUID owner, String ownerName, long customCap) {
         if (mode == null) {
             stickers.remove(pos);
         } else {
-            stickers.put(pos.immutable(), new StickerEntry(mode, owner, ownerName == null ? "" : ownerName));
+            StickerEntry old = stickers.get(pos);
+            long cap = customCap > 0L ? customCap : (old != null ? old.customCap() : 0L);
+            stickers.put(pos.immutable(), new StickerEntry(mode, owner, ownerName == null ? "" : ownerName, cap));
         }
         setDirty();
     }
@@ -95,6 +104,6 @@ public class StickerSavedData extends SavedData {
         try { return UUID.fromString(raw); } catch (IllegalArgumentException ignored) { return null; }
     }
 
-    /** 单条贴纸记录：模式 + 贴标者。 */
-    public record StickerEntry(StickerMode mode, UUID owner, String ownerName) {}
+    /** 单条贴纸记录：模式 + 贴标者 + 自定义容量上限（FE）。 */
+    public record StickerEntry(StickerMode mode, UUID owner, String ownerName, long customCap) {}
 }
