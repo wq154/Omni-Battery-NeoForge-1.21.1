@@ -13,6 +13,16 @@ import net.minecraft.world.item.ItemStack;
 public final class ClientHooks {
     private ClientHooks() {}
 
+    /** 从电池 GUI 打开"这台机器"的自定义容量输入框（仅客户端调用）。 */
+    public static void openMachineCap(int x, int y, int z, long initial) {
+        try {
+            Class<?> cls = Class.forName("cn.ayaka.omnibattery.client.ClientScreens");
+            cls.getMethod("openMachineCap", int.class, int.class, int.class, long.class)
+                    .invoke(null, x, y, z, initial);
+        } catch (Throwable ignored) {
+        }
+    }
+
     /** 打开自定义容量输入框（仅客户端调用）。 */
     public static void openCustomCap(ItemStack stack) {
         try {

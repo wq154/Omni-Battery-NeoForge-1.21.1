@@ -335,6 +335,12 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
         return out;
     }
 
+    /** 快照里第 idx 台机器的自定义容量（来自服务端同步）。 */
+    private long capOf(int idx) {
+        var all = cfgList();
+        return idx >= 0 && idx < all.size() ? all.get(idx).cap() : 1_000_000L;
+    }
+
     private static long cfgRate(int[] row, boolean supply) {
         int lo = supply ? row[7] : row[5];
         int hi = supply ? row[8] : row[6];
@@ -601,6 +607,12 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
                         if (isHover(mx, my, x + W - 74, oy, 70, 14)) {
                             int snapIdx = r[0];
                             openDropdown = -1;
+                            if (k == 3) {
+                                // "自定义"：先弹输入框填容量，保存时会把该机器设为自定义模式
+                                cn.ayaka.omnibattery.client.ClientHooks.openMachineCap(
+                                        r[1], r[2], r[3], capOf(snapIdx));
+                                return true;
+                            }
                             return press(400 + snapIdx * 5 + k);
                         }
                     }

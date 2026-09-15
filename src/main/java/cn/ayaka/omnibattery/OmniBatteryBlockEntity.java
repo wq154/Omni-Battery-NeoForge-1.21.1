@@ -476,7 +476,7 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
 
 
     /** 用电配置界面的机器条目。 */
-    public record TargetInfo(int x, int y, int z, int mode, long absorb, long supply, String name) {}
+    public record TargetInfo(int x, int y, int z, int mode, long absorb, long supply, String name, long cap) {}
 
     /** 客户端缓存（由 NBT 同步填充）。 */
     private final java.util.List<TargetInfo> cfgTargets = new java.util.ArrayList<>();
@@ -506,7 +506,8 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
             }
             out.add(new TargetInfo(p.getX(), p.getY(), p.getZ(), targetModeOrdinal(p),
                     targetAbsorbLastSecond.getOrDefault(p.asLong(), 0L),
-                    targetSupplyLastSecond.getOrDefault(p.asLong(), 0L), nm));
+                    targetSupplyLastSecond.getOrDefault(p.asLong(), 0L), nm,
+                    e.customCap() > 0L ? e.customCap() : 1_000_000L));
         }
         out.sort((a, b) -> a.x != b.x ? Integer.compare(a.x, b.x)
                 : (a.y != b.y ? Integer.compare(a.y, b.y) : Integer.compare(a.z, b.z)));
@@ -525,6 +526,7 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
             e.putLong("a", t.absorb());
             e.putLong("s", t.supply());
             e.putString("n", t.name());
+            e.putLong("c", t.cap());
             list.add(e);
         }
         tag.put("CfgTargets", list);
@@ -537,8 +539,23 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         for (int i = 0; i < list.size(); i++) {
             net.minecraft.nbt.CompoundTag e = list.getCompound(i);
             cfgTargets.add(new TargetInfo(e.getInt("x"), e.getInt("y"), e.getInt("z"),
-                    e.getInt("m"), e.getLong("a"), e.getLong("s"), e.getString("n")));
+                    e.getInt("m"), e.getLong("a"), e.getLong("s"), e.getString("n"),
+                    e.contains("c") ? e.getLong("c") : 1_000_000L));
         }
+    }
+
+    /** 设置某台机器的"自定义"容量上限（从电池 GUI 输入）。 */
+    public boolean setMachineCap(BlockPos pos, long value, Player player) {
+        if (pos == null || !canManage(player)) return false;
+        if (!(level instanceof net.minecraft.server.level.ServerLevel sl)) return false;
+        StickerSavedData data = StickerSavedData.get(sl);
+        StickerSavedData.StickerEntry e = data.getEntry(pos);
+        if (e == null) return false;
+        long v = Math.max(1L, Math.min(Long.MAX_VALUE / 4, value));
+        // 以"自定义"模式写入该机器，并带上新的容量上限
+        data.setMode(pos, StickerMode.CUSTOM, e.owner(), e.ownerName(), v);
+        setChanged();
+        return true;
     }
 
     /** 按快照索引把某台机器设为指定模式（0 吸电 / 1 供电 / 2 过载 / 3 清除）。 */

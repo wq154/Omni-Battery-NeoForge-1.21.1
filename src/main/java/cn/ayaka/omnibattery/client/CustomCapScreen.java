@@ -2,34 +2,51 @@ package cn.ayaka.omnibattery.client;
 
 import cn.ayaka.omnibattery.MachineStickerItem;
 import cn.ayaka.omnibattery.network.SetCustomCapPayload;
+import cn.ayaka.omnibattery.network.SetMachineCapPayload;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 /**
- * 「自定义」标签模式的数值输入框。
- * 潜行右键空气（手持已切到"自定义"的机器标签）时弹出，输入容量上限后保存到标签工具上。
+ * 「自定义」容量输入框。两种用法：
+ * <ul>
+ *   <li>手持标签潜行右键空气（自定义模式）→ 修改**标签工具**上的默认值</li>
+ *   <li>电池 GUI -> 用电配置 -> 某台机器选"自定义" → 直接修改**那台机器**的容量上限</li>
+ * </ul>
  */
 public class CustomCapScreen extends Screen {
-    private final ItemStack stack;
-    private EditBox box;
+    private final ItemStack stack;        // 物品模式（否则为 null）
+    private final BlockPos machinePos;    // 机器模式（否则为 null）
+    private final long initial;
 
+    /** 物品模式。 */
     public CustomCapScreen(ItemStack stack) {
         super(Component.literal("自定义容量"));
         this.stack = stack;
+        this.machinePos = null;
+        this.initial = MachineStickerItem.getCustomCap(stack);
+    }
+
+    /** 机器模式（从电池 GUI 进入）。 */
+    public CustomCapScreen(BlockPos machinePos, long initial) {
+        super(Component.literal("自定义容量"));
+        this.stack = null;
+        this.machinePos = machinePos;
+        this.initial = initial > 0L ? initial : 1_000_000L;
     }
 
     @Override
     protected void init() {
         int cx = this.width / 2;
         int cy = this.height / 2;
-        box = new EditBox(this.font, cx - 90, cy - 8, 180, 20, Component.literal("容量"));
+        EditBox box = new EditBox(this.font, cx - 90, cy - 8, 180, 20, Component.literal("容量"));
         box.setMaxLength(18);
-        box.setValue(String.valueOf(MachineStickerItem.getCustomCap(stack)));
+        box.setValue(String.valueOf(this.initial));
         addRenderableWidget(box);
         setInitialFocus(box);
 
@@ -40,7 +57,12 @@ public class CustomCapScreen extends Screen {
             } catch (Exception e) {
                 v = 1_000_000L;
             }
-            PacketDistributor.sendToServer(new SetCustomCapPayload(v));
+            if (machinePos != null) {
+                PacketDistributor.sendToServer(
+                        new SetMachineCapPayload(machinePos.getX(), machinePos.getY(), machinePos.getZ(), v));
+            } else if (stack != null) {
+                PacketDistributor.sendToServer(new SetCustomCapPayload(v));
+            }
             onClose();
         }).bounds(cx - 90, cy + 20, 86, 20).build());
 
@@ -55,7 +77,9 @@ public class CustomCapScreen extends Screen {
         int cy = this.height / 2;
         graphics.drawCenteredString(this.font, "自定义容量上限（FE）", cx, cy - 40, 0xFFFFFF);
         graphics.drawCenteredString(this.font,
-                "过载时会把机器容量设成这个值，只灌到这里为止，不会无限吃电",
+                machinePos != null
+                        ? "应用在这台机器上：把它的容量设成此值，只灌到这里为止"
+                        : "过载时会把机器容量设成这个值，只灌到这里为止，不会无限吃电",
                 cx, cy - 26, 0xA0A6B0);
         super.render(graphics, mouseX, mouseY, partialTick);
     }

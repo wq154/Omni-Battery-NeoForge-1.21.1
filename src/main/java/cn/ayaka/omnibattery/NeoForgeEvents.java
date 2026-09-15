@@ -2,6 +2,7 @@ package cn.ayaka.omnibattery;
 
 import cn.ayaka.omnibattery.network.OpenBoundBatteryPayload;
 import cn.ayaka.omnibattery.network.SetCustomCapPayload;
+import cn.ayaka.omnibattery.network.SetMachineCapPayload;
 import cn.ayaka.omnibattery.network.ToggleAutoTagPayload;
 import cn.ayaka.omnibattery.registry.ModBlocks;
 import cn.ayaka.omnibattery.registry.ModItems;
@@ -48,5 +49,7 @@ public final class NeoForgeEvents {
                 OpenBoundBatteryPayload::handle);
         registrar.playToServer(SetCustomCapPayload.TYPE, SetCustomCapPayload.STREAM_CODEC,
                 SetCustomCapPayload::handle);
+        registrar.playToServer(SetMachineCapPayload.TYPE, SetMachineCapPayload.STREAM_CODEC,
+                SetMachineCapPayload::handle);
     }
 }
