@@ -346,6 +346,14 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         }
     }
 
+    /** 清空某台机器的统计（"清除标签"时一并归零）。 */
+    public void resetTargetStats(BlockPos pos) {
+        if (pos == null) return;
+        long k = pos.asLong();
+        targetAbsorbLastSecond.remove(k);
+        targetSupplyLastSecond.remove(k);
+    }
+
     /** 某目标最近一秒的吸电量（FE/s）。 */
     public long targetAbsorbRate(BlockPos pos) {
         return pos == null ? 0L : targetAbsorbLastSecond.getOrDefault(pos.asLong(), 0L);
@@ -364,6 +372,7 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         StickerSavedData.StickerEntry e = data.getEntry(pos);
         if (e == null) return false;
         data.setMode(pos, mode, e.owner(), e.ownerName());
+        if (mode == null) resetTargetStats(pos);   // 清除标签时同时清掉统计
         setChanged();
         return true;
     }
@@ -400,6 +409,76 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         return out;
     }
 
+
+    /** 用电配置界面的机器条目。 */
+    public record TargetInfo(int x, int y, int z, int mode, long absorb, long supply) {}
+
+    /** 客户端缓存（由 NBT 同步填充）。 */
+    private final java.util.List<TargetInfo> cfgTargets = new java.util.ArrayList<>();
+
+    public java.util.List<TargetInfo> getCfgTargets() { return cfgTargets; }
+
+    /**
+     * 本维度所有已打标签的机器，**按坐标排序**（顺序稳定，界面索引与按钮索引一致）。
+     * 全部列出，无上限。
+     */
+    public java.util.List<TargetInfo> snapshotTargets() {
+        java.util.List<TargetInfo> out = new java.util.ArrayList<>();
+        if (!(level instanceof net.minecraft.server.level.ServerLevel sl)) return out;
+        StickerSavedData data = StickerSavedData.get(sl);
+        for (BlockPos p : data.positions()) {
+            StickerSavedData.StickerEntry e = data.getEntry(p);
+            if (e == null || e.mode() == null) continue;
+            out.add(new TargetInfo(p.getX(), p.getY(), p.getZ(), e.mode().ordinal(),
+                    targetAbsorbLastSecond.getOrDefault(p.asLong(), 0L),
+                    targetSupplyLastSecond.getOrDefault(p.asLong(), 0L)));
+        }
+        out.sort((a, b) -> a.x != b.x ? Integer.compare(a.x, b.x)
+                : (a.y != b.y ? Integer.compare(a.y, b.y) : Integer.compare(a.z, b.z)));
+        return out;
+    }
+
+    /** 供 NBT 同步：把全部目标写进 tag（无上限）。 */
+    public void writeCfgTargets(net.minecraft.nbt.CompoundTag tag) {
+        net.minecraft.nbt.ListTag list = new net.minecraft.nbt.ListTag();
+        for (TargetInfo t : snapshotTargets()) {
+            net.minecraft.nbt.CompoundTag e = new net.minecraft.nbt.CompoundTag();
+            e.putInt("x", t.x());
+            e.putInt("y", t.y());
+            e.putInt("z", t.z());
+            e.putInt("m", t.mode());
+            e.putLong("a", t.absorb());
+            e.putLong("s", t.supply());
+            list.add(e);
+        }
+        tag.put("CfgTargets", list);
+    }
+
+    /** 客户端侧：从 NBT 读取目标列表。 */
+    public void readCfgTargets(net.minecraft.nbt.CompoundTag tag) {
+        cfgTargets.clear();
+        net.minecraft.nbt.ListTag list = tag.getList("CfgTargets", 10);
+        for (int i = 0; i < list.size(); i++) {
+            net.minecraft.nbt.CompoundTag e = list.getCompound(i);
+            cfgTargets.add(new TargetInfo(e.getInt("x"), e.getInt("y"), e.getInt("z"),
+                    e.getInt("m"), e.getLong("a"), e.getLong("s")));
+        }
+    }
+
+    /** 按快照索引把某台机器设为指定模式（0 吸电 / 1 供电 / 2 过载 / 3 清除）。 */
+    public boolean applyTargetByIndex(int index, int option, Player player) {
+        if (!canManage(player)) return false;
+        java.util.List<TargetInfo> list = snapshotTargets();
+        if (index < 0 || index >= list.size()) return false;
+        TargetInfo t = list.get(index);
+        StickerMode mode = switch (option) {
+            case 0 -> StickerMode.ABSORB;
+            case 1 -> StickerMode.SUPPLY;
+            case 2 -> StickerMode.OVERLOAD;
+            default -> null;
+        };
+        return setTargetMode(new BlockPos(t.x(), t.y(), t.z()), mode, player);
+    }
 
     /** 本维度已打标签的机器（供"用电配置"界面枚举）。 */
     public java.util.List<BlockPos> stickerTargetsHere(int limit) {
@@ -1380,6 +1459,8 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         // 速率统计（供 GUI 显示，BE 更新包同步到客户端）
         tag.putLong("LastAbsorbed", lastAbsorbed);
         tag.putLong("LastSupplied", lastSupplied);
+        // 用电配置界面：把全部已打标签机器连同实时速率一起同步/存档
+        writeCfgTargets(tag);
         // 玩家供电开关
         tag.putBoolean("ChargeInventory", chargeInventory);
         tag.putBoolean("ChargeCurios", chargeCurios);
@@ -1399,6 +1480,7 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         range = tag.contains("Range") ? tag.getInt("Range") : tier.defaultRange();
         lastAbsorbed = tag.getLong("LastAbsorbed");
         lastSupplied = tag.getLong("LastSupplied");
+        readCfgTargets(tag);
         chargeInventory = tag.contains("ChargeInventory") && tag.getBoolean("ChargeInventory");
         chargeCurios = tag.contains("ChargeCurios") && tag.getBoolean("ChargeCurios");
         int ai = tag.getInt("Access");

@@ -14,10 +14,11 @@ import net.minecraft.world.item.ItemStack;
  * 服务端持有 BlockEntity 引用并每次 broadcastChanges 时刷新；客户端仅由 data slot 同步显示。
  */
 public class OmniBatteryMenu extends AbstractContainerMenu {
-    // ---------------- 用电配置页：目标机器同步 ----------------
-    public static final int TARGET_COUNT = 16;
-    private static final int TARGET_BASE = 255;
-    private static final int EMPTY_SLOT = Integer.MIN_VALUE;
+    // ---------------- 用电配置页 ----------------
+    /** 界面最多展示的机器数（仅用于按钮 id 分配；实际列表由 BE 的 NBT 同步，无上限时为 0）。 */
+    public static final int TARGET_COUNT = 0;
+    /** 本界面所属电池的位置（客户端也有效，用于读取客户端 BE 的同步列表）。 */
+    private final net.minecraft.core.BlockPos menuPos;
 
 
     private final ContainerData data;
@@ -27,7 +28,8 @@ public class OmniBatteryMenu extends AbstractContainerMenu {
     public OmniBatteryMenu(int id, Inventory inv, OmniBatteryBlockEntity be) {
         super(ModMenuTypes.OMNI_BATTERY.get(), id);
         this.blockEntity = be;
-        this.data = new SimpleContainerData(15 + OmniBatteryBlockEntity.HISTORY_SIZE * 4 + TARGET_COUNT * 6);
+        this.menuPos = be != null ? be.getBlockPos() : net.minecraft.core.BlockPos.ZERO;
+        this.data = new SimpleContainerData(15 + OmniBatteryBlockEntity.HISTORY_SIZE * 4);
         addDataSlots(data);
     }
 
@@ -71,24 +73,6 @@ public class OmniBatteryMenu extends AbstractContainerMenu {
                 syncLong(15 + i * 4, blockEntity.getAbsorbHistory(i));
                 syncLong(15 + i * 4 + 2, blockEntity.getSupplyHistory(i));
             }
-            // 用电配置页：同步本维度已打标签的机器（坐标 + 模式）
-            java.util.List<net.minecraft.core.BlockPos> cfgTargets =
-                    blockEntity.stickerTargetsHere(TARGET_COUNT);
-            for (int ti = 0; ti < TARGET_COUNT; ti++) {
-                int b = TARGET_BASE + ti * 6;
-                if (ti < cfgTargets.size()) {
-                    net.minecraft.core.BlockPos tp = cfgTargets.get(ti);
-                    data.set(b, tp.getX());
-                    data.set(b + 1, tp.getY());
-                    data.set(b + 2, tp.getZ());
-                    data.set(b + 3, blockEntity.targetModeOrdinal(tp));
-                    // 吸电 / 供电速率（FE/s）
-                    data.set(b + 4, (int) Math.min(Integer.MAX_VALUE, blockEntity.targetAbsorbRate(tp)));
-                    data.set(b + 5, (int) Math.min(Integer.MAX_VALUE, blockEntity.targetSupplyRate(tp)));
-                } else {
-                    for (int q = 0; q < 6; q++) data.set(b + q, EMPTY_SLOT);
-                }
-            }
         }
         super.broadcastChanges();
     }
@@ -130,8 +114,11 @@ public class OmniBatteryMenu extends AbstractContainerMenu {
                         "电池权限：" + blockEntity.getAccess().display()), true);
             }
             default -> {
-                if (button >= 400 && button < 400 + TARGET_COUNT * 4) {
+                if (button >= 400 && button < 4000) {
                     return applyTargetOption((button - 400) / 4, (button - 400) % 4, player);
+                }
+                if (button == 700) {     // 交换正/反序（纯客户端操作，这里只是兜底）
+                    return true;
                 }
                 return false;
             }
@@ -221,42 +208,12 @@ public class OmniBatteryMenu extends AbstractContainerMenu {
     }
 
     // ---------------- 用电配置页读取 ----------------
-    public int getTargetCount() { return TARGET_COUNT; }
+    public net.minecraft.core.BlockPos getMenuPos() { return menuPos; }
 
-    public boolean hasTarget(int i) { return data.get(TARGET_BASE + i * 6) != EMPTY_SLOT; }
-
-    public int getTargetX(int i) { return data.get(TARGET_BASE + i * 6); }
-    public int getTargetY(int i) { return data.get(TARGET_BASE + i * 6 + 1); }
-    public int getTargetZ(int i) { return data.get(TARGET_BASE + i * 6 + 2); }
-
-    /** 0 吸电 / 1 供电 / 2 过载 */
-    public int getTargetMode(int i) { return data.get(TARGET_BASE + i * 6 + 3); }
-
-    /** 该机器最近一秒吸电量（FE/s）。 */
-    public long getTargetAbsorb(int i) { return Math.max(0L, data.get(TARGET_BASE + i * 6 + 4)); }
-
-    /** 该机器最近一秒供电量（FE/s）。 */
-    public long getTargetSupply(int i) { return Math.max(0L, data.get(TARGET_BASE + i * 6 + 5)); }
-
-    public String getTargetModeName(int i) {
-        return switch (getTargetMode(i)) {
-            case 0 -> "吸电";
-            case 1 -> "供电";
-            default -> "过载";
-        };
+    /** 把第 index 台机器设为指定模式（option: 0 吸电 / 1 供电 / 2 过载 / 3 清除标签）。 */
+    public boolean applyTargetOption(int index, int option, Player player) {
+        if (blockEntity == null) return false;
+        return blockEntity.applyTargetByIndex(index, option, player);
     }
 
-    /** 把第 i 台机器设为指定模式（option: 0 吸电 / 1 供电 / 2 过载 / 3 清除标签）。 */
-    public boolean applyTargetOption(int i, int option, Player player) {
-        if (blockEntity == null || !hasTarget(i)) return false;
-        net.minecraft.core.BlockPos pos =
-                new net.minecraft.core.BlockPos(getTargetX(i), getTargetY(i), getTargetZ(i));
-        StickerMode mode = switch (option) {
-            case 0 -> StickerMode.ABSORB;
-            case 1 -> StickerMode.SUPPLY;
-            case 2 -> StickerMode.OVERLOAD;
-            default -> null;    // 清除标签
-        };
-        return blockEntity.setTargetMode(pos, mode, player);
-    }
 }
