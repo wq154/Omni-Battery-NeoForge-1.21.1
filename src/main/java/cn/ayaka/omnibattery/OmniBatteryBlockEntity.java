@@ -336,64 +336,6 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
     }
 
 
-    // ---- 自定义模式：把机器容量改成玩家设定值 ----
-
-    /** 容量发生变化的记录，避免每 tick 重复写字段。 */
-    private final java.util.HashMap<Long, Long> capacityApplied = new java.util.HashMap<>();
-
-    /**
-     * 把机器 BE 的容量字段强制设为 cap（反射直接写字段）。
-     *
-     * @return 是否真的改到了容量字段。返回 false 时调用方应当退化成普通过载 ——
-     *         否则玩家会看到"打上自定义后机器连基本供电都没有"。
-     */
-    private boolean forceCapacity(net.minecraft.world.level.block.entity.BlockEntity be, long cap) {
-        long key = be.getBlockPos().asLong();
-        Long prev = capacityApplied.get(key);
-        if (prev != null && prev == cap) return true;      // 已经是这个值
-        if (writeCapacityFields(be, cap)) {
-            capacityApplied.put(key, cap);
-            be.setChanged();
-            return true;
-        }
-        return false;
-    }
-
-    /** 反射遍历类型层级，把名字像"容量"的字段写成 cap。返回是否有改动。 */
-    private static boolean writeCapacityFields(net.minecraft.world.level.block.entity.BlockEntity be, long cap) {
-        boolean changed = false;
-        for (Class<?> c = be.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
-            for (java.lang.reflect.Field f : c.getDeclaredFields()) {
-                if (java.lang.reflect.Modifier.isStatic(f.getModifiers())) continue;
-                if (!isCapacityFieldName(f.getName())) continue;
-                try {
-                    f.setAccessible(true);
-                    if (f.getType() == long.class) {
-                        f.setLong(be, cap);
-                        changed = true;
-                    } else if (f.getType() == int.class) {
-                        f.setInt(be, (int) Math.min(cap, Integer.MAX_VALUE));
-                        changed = true;
-                    }
-                } catch (Throwable ignored) {
-                    // 字段不可写就跳过
-                }
-            }
-        }
-        return changed;
-    }
-
-    /** 只认标准的容量字段名，避免误改坐标之类的字段。 */
-    private static boolean isCapacityFieldName(String name) {
-        String n = name.toLowerCase(java.util.Locale.ROOT);
-        return switch (n) {
-            case "capacity", "maxcapacity", "energycapacity",
-                 "maxenergy", "maxenergystored", "maxenergyreceive", "maxenergyextract",
-                 "energymax", "maxfe", "maxstorage" -> true;
-            default -> false;
-        };
-    }
-
     // ---- NBT 硬灌/硬抽的节流 ----
     // loadWithComponents = 把机器 BE 整个重新反序列化，代价极高；每 tick 调用会让区块反复标脏、
     // 最终把区块光照搞崩（地图全黑 + 刷怪）。这里限制为每目标每 20 tick 最多碰一次。
@@ -718,13 +660,11 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         if (isOwnOrOmniBatteryStorage(be, storage)) return 0;
         if (sticker == StickerMode.ABSORB) return transferExtractOnce(storage, request);
         if (sticker == StickerMode.OVERLOAD || sticker == StickerMode.CUSTOM) {
-            // 过载 / 自定义：强力抽取（自定义的速率上限由玩家设定）
-            long rate = sticker == StickerMode.CUSTOM ? customCapFor(be) : Long.MAX_VALUE;
-            int budget = (int) Math.min(request, Math.max(1L, Math.min(rate, Integer.MAX_VALUE)));
-            if (!canActuallyExtract(storage, budget) && readEnergyReflective(storage) <= 0L) return 0;
-            int moved = transferExtractLoop(storage, budget);
-            if (moved < budget) moved += drainEnergyReflective(storage, budget - moved);
-            if (moved < budget) moved += drainEnergyNbt(level, be, budget - moved);
+            // 过载 / 自定义：强力抽取（与过载完全一致）
+            if (!canActuallyExtract(storage, request) && readEnergyReflective(storage) <= 0L) return 0;
+            int moved = transferExtractLoop(storage, request);
+            if (moved < request) moved += drainEnergyReflective(storage, request - moved);
+            if (moved < request) moved += drainEnergyNbt(level, be, request - moved);
             return moved;
         }
         return 0;
@@ -737,31 +677,20 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         if (isOwnOrOmniBatteryStorage(be, storage)) return 0;
         if (sticker == StickerMode.SUPPLY) return transferReceiveOnce(storage, request);
         if (sticker == StickerMode.CUSTOM) {
-            // 自定义 = 过载的强力传输，外加一步：把**这台机器自己的容量**强制设成玩家设定值，
-            // 于是它最多只能存这么多，电池灌满它就会停 —— 不会无限吃电。
+            // 自定义 = 与过载相同的强力传输，但把"灌入上限"设为玩家设定的数值：
+            // 机器电量达到该值就停，所以不会无限吃电。
             //
-            // 关键：改容量走**反射直接写字段**。早期版本用 saveWithoutMetadata + loadWithComponents
-            // 改 NBT，等于每 tick 把整个 BE 重新反序列化，会把区块光照引擎冲垮（地图全黑 + 刷怪）。
+            // 绝不修改机器自身的任何状态（不写字段、不碰 NBT）：
+            //   * 用 saveWithoutMetadata + loadWithComponents 改 NBT -> 每 tick 重载 BE，冲垮光照引擎（地图全黑+刷怪）
+            //   * 用反射改"容量"字段 -> 很多机器容量是动态算出来的，硬改会让它内部不一致，
+            //     出现"存的电比新容量还多"从而彻底失灵（打上自定义后连普通供电都没有）
+            // 只在自己的账本里判断上限，机器完全不受影响。
             long cap = customCapFor(be);
-            boolean applied = forceCapacity(be, cap);
-
-            int budget = request;          // 默认与过载一致
-            if (applied) {
-                long stored = readEnergyReflective(storage);
-                if (stored < 0L) stored = storage.getEnergyStored();
-                if (stored > cap) {
-                    // 机器里已有的电比设定的新容量还多：先抽掉多余的，否则它会处于"超容量"异常状态，
-                    // 连基本功能都会失效（这就是"打上自定义后机器完全没反应"的原因之一）。
-                    long excess = stored - cap;
-                    int drained = storage.extractEnergy((int) Math.min(excess, Integer.MAX_VALUE), false);
-                    stored -= Math.max(0, drained);
-                }
-                long room = cap - stored;
-                if (room <= 0L) return 0;
-                budget = (int) Math.min(Math.min((long) request, room), Integer.MAX_VALUE);
-            }
-            // 注意：找不到容量字段时（applied == false）不做任何限制，直接按过载的强度供电，
-            // 否则会出现"打上自定义之后连普通供电都没有"的现象。
+            long stored = storage.getEnergyStored();
+            if (stored < 0L) stored = 0L;
+            long room = cap - stored;
+            if (room <= 0L) return 0;                       // 已经达到设定值，不再灌
+            int budget = (int) Math.min(Math.min((long) request, room), Integer.MAX_VALUE);
             int moved = transferReceiveLoop(storage, budget);
             if (moved < budget) moved += fillEnergyReflective(storage, budget - moved);
             if (moved < budget) moved += fillEnergyNbt(level, be, budget - moved);
