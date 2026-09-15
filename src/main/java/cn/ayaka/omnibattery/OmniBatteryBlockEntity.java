@@ -411,7 +411,7 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
 
 
     /** 用电配置界面的机器条目。 */
-    public record TargetInfo(int x, int y, int z, int mode, long absorb, long supply) {}
+    public record TargetInfo(int x, int y, int z, int mode, long absorb, long supply, String name) {}
 
     /** 客户端缓存（由 NBT 同步填充）。 */
     private final java.util.List<TargetInfo> cfgTargets = new java.util.ArrayList<>();
@@ -431,9 +431,16 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
             if (e == null || e.mode() == null) continue;
             // 注意：必须用 targetModeOrdinal（显示顺序 0吸电/1供电/2过载），
             // 不能用 e.mode().ordinal() —— 枚举常量的声明顺序与之不同，会导致"吸电/供电"显示互换。
+            // 机器名在服务端解析好一并同步 —— 客户端可能没有加载该区块，自己查不到方块名。
+            String nm = "机器";
+            try {
+                var st = sl.getBlockState(p);
+                if (!st.isAir()) nm = st.getBlock().getName().getString();
+            } catch (Throwable ignored) {
+            }
             out.add(new TargetInfo(p.getX(), p.getY(), p.getZ(), targetModeOrdinal(p),
                     targetAbsorbLastSecond.getOrDefault(p.asLong(), 0L),
-                    targetSupplyLastSecond.getOrDefault(p.asLong(), 0L)));
+                    targetSupplyLastSecond.getOrDefault(p.asLong(), 0L), nm));
         }
         out.sort((a, b) -> a.x != b.x ? Integer.compare(a.x, b.x)
                 : (a.y != b.y ? Integer.compare(a.y, b.y) : Integer.compare(a.z, b.z)));
@@ -451,6 +458,7 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
             e.putInt("m", t.mode());
             e.putLong("a", t.absorb());
             e.putLong("s", t.supply());
+            e.putString("n", t.name());
             list.add(e);
         }
         tag.put("CfgTargets", list);
@@ -463,7 +471,7 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         for (int i = 0; i < list.size(); i++) {
             net.minecraft.nbt.CompoundTag e = list.getCompound(i);
             cfgTargets.add(new TargetInfo(e.getInt("x"), e.getInt("y"), e.getInt("z"),
-                    e.getInt("m"), e.getLong("a"), e.getLong("s")));
+                    e.getInt("m"), e.getLong("a"), e.getLong("s"), e.getString("n")));
         }
     }
 
