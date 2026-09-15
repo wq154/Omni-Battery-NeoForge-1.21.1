@@ -209,6 +209,8 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
                 menu.getAccessDisplay(), mouseX, mouseY, 8, "切换权限：私人 / 队伍 / 公开");
 
         // ==== 用电报告按钮（趋势标题右侧）====
+        drawChip(graphics, rightEdge - 128, y + TREND_TITLE_Y - 5, 62, 14, "切换电池",
+                mouseX, mouseY, OmniBatteryMenu.SWITCH_BATTERY, "切到下一块已绑定的电池");
         drawChip(graphics, rightEdge - 62, y + TREND_TITLE_Y - 5, 62, 14, "用电配置",
                 mouseX, mouseY, 9, "查看/调整本维度所有打了标签的机器");
 
@@ -319,7 +321,7 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
 
         // ---- 表头 ----
         graphics.drawString(font, "机器", x + 12, y + CFG_HEAD_Y, 0xFFEAF1F8, false);
-        graphics.drawString(font, "吸电 / 供电 (FE/s)", x + 78, y + CFG_HEAD_Y, 0xFFEAF1F8, false);
+        graphics.drawString(font, "吸电 / 供电 (FE/t)", x + 78, y + CFG_HEAD_Y, 0xFFEAF1F8, false);
 
         // ---- 数据行 ----
         for (int row = 0; row < CFG_PER_PAGE && start + row < view.size(); row++) {
@@ -339,7 +341,8 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
 
             // 用短格式（如 "1.2K"），保证不会挤到右侧的模式按钮
             long ab = cfgRate(r, false), su = cfgRate(r, true);
-            String rate = OmniBatteryMenu.fmtShort(ab) + " / " + OmniBatteryMenu.fmtShort(su);
+            // 统计是按秒累计的，这里换算成每 tick（FE/t），与"速度"设置的单位一致
+            String rate = OmniBatteryMenu.fmtShort(ab / 20L) + " / " + OmniBatteryMenu.fmtShort(su / 20L);
             graphics.drawString(font, rate, x + 78, ry + 5,
                     (ab > 0 ? 0xFFFFA640 : (su > 0 ? 0xFF6AE8E0 : 0xFF6E7076)), false);
 
@@ -572,6 +575,10 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
         // 范围
         if (isHover(mx, my, minusX, y + ROW3 + 1, BTN_PM_W, BTN_H)) return press(4);
         if (isHover(mx, my, plusX, y + ROW3 + 1, BTN_PM_W, BTN_H)) return press(3);
+        // 切换电池（发按钮 id 给服务端：切到贴纸绑定的下一块电池并打开它）
+        if (isHover(mx, my, rightEdge - 128, y + TREND_TITLE_Y - 5, 62, 14)) {
+            return press(OmniBatteryMenu.SWITCH_BATTERY);
+        }
         // 用电配置（本地切页，不发服务端）
         if (isHover(mx, my, rightEdge - 62, y + TREND_TITLE_Y - 5, 62, 14)) { page = 1; return true; }
         // 玩家供电开关 + 权限（同一行）

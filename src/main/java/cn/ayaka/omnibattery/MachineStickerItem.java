@@ -4,6 +4,8 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
@@ -74,8 +76,8 @@ public class MachineStickerItem extends Item {
         }
         // 如果右键的是电池，顺便把这块电池绑定为"快捷键目标"
         if (level.getBlockEntity(pos) instanceof OmniBatteryBlockEntity obe && obe.canManage(player)) {
-            bind(stack, pos, level.dimension().location().toString());
-            player.displayClientMessage(Component.literal("\u5df2\u7ed1\u5b9a\u7535\u6c60\uff08\u6309\u5feb\u6377\u952e\u53ef\u968f\u65f6\u6253\u5f00\uff09: ")
+            int bound = addBind(stack, pos, level.dimension().location().toString());
+            player.displayClientMessage(Component.literal("\u5df2\u7ed1\u5b9a\uff08\u5171 " + bound + " \u4e2a\uff09\uff1a\u6309\u5feb\u6377\u952e\u6253\u5f00\uff0c\u754c\u9762\u5185\u53ef\u5207\u6362: ")
                     .withStyle(ChatFormatting.AQUA)
                     .append(Component.literal(pos.getX() + ", " + pos.getY() + ", " + pos.getZ())
                             .withStyle(ChatFormatting.WHITE)), true);
@@ -127,7 +129,8 @@ public class MachineStickerItem extends Item {
         tooltip.add(Component.literal("\u6f5c\u884c\u53f3\u952e\u673a\u5668\uff1a\u8d34\u4e0a\u5f53\u524d\u6a21\u5f0f\u6807\u7b7e").withStyle(ChatFormatting.GRAY));
         if (hasBind(stack)) {
             BlockPos bp = getBindPos(stack);
-            tooltip.add(Component.literal("\u5df2\u7ed1\u5b9a\u7535\u6c60\uff1a").withStyle(ChatFormatting.LIGHT_PURPLE)
+            tooltip.add(Component.literal("\u5df2\u7ed1\u5b9a " + getBindCount(stack) + " \u4e2a\u7535\u6c60\uff0c\u5f53\u524d\uff1a")
+                    .withStyle(ChatFormatting.LIGHT_PURPLE)
                     .append(Component.literal(bp.getX() + ", " + bp.getY() + ", " + bp.getZ())
                             .withStyle(ChatFormatting.WHITE)));
             tooltip.add(Component.literal("\u6309\u5feb\u6377\u952e\uff08\u9ed8\u8ba4 \u53cd\u659c\u6760 \u952e\uff0c\u53ef\u5728\u8bbe\u7f6e\u91cc\u6539\uff09\u8fdc\u7a0b\u6253\u5f00").withStyle(ChatFormatting.LIGHT_PURPLE));
@@ -139,30 +142,85 @@ public class MachineStickerItem extends Item {
         tooltip.add(Component.literal("\u81ea\u52a8\u8d34\u6807\u5f00\u542f\u540e\uff0c\u673a\u5668\u653e\u7f6e\u65f6\u81ea\u52a8\u8d34\u4e0a\u5f53\u524d\u6a21\u5f0f").withStyle(ChatFormatting.DARK_GRAY));
     }
 
-    /** 绑定快捷键目标（记录坐标 + 维度）。 */
-    public static void bind(ItemStack stack, BlockPos pos, String dim) {
+    // ---------------- 快捷键绑定目标（可绑定多个电池）----------------
+    private static final String TAG_BINDS = "StickerBinds";   // ListTag: {x,y,z,d}
+    private static final String TAG_BIDX = "StickerBindIdx";  // 当前选中的索引
+
+    /** 绑定一个电池（已绑定过则只切换选中项）。返回绑定总数。 */
+    public static int addBind(ItemStack stack, BlockPos pos, String dim) {
+        final int[] total = {0};
         CustomData.update(DataComponents.CUSTOM_DATA, stack, t -> {
-            t.putInt(TAG_BX, pos.getX());
-            t.putInt(TAG_BY, pos.getY());
-            t.putInt(TAG_BZ, pos.getZ());
-            t.putString(TAG_BD, dim);
+            ListTag list = t.getList(TAG_BINDS, 10);
+            for (int i = 0; i < list.size(); i++) {
+                CompoundTag e = list.getCompound(i);
+                if (e.getInt("x") == pos.getX() && e.getInt("y") == pos.getY()
+                        && e.getInt("z") == pos.getZ() && e.getString("d").equals(dim)) {
+                    t.putInt(TAG_BIDX, i);
+                    total[0] = list.size();
+                    return;
+                }
+            }
+            CompoundTag e = new CompoundTag();
+            e.putInt("x", pos.getX());
+            e.putInt("y", pos.getY());
+            e.putInt("z", pos.getZ());
+            e.putString("d", dim);
+            list.add(e);
+            t.put(TAG_BINDS, list);
+            t.putInt(TAG_BIDX, list.size() - 1);
+            total[0] = list.size();
         });
+        return total[0];
     }
 
-    /** 是否已绑定快捷键目标。 */
-    public static boolean hasBind(ItemStack stack) {
-        return stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag().contains(TAG_BX);
-    }
-
-    /** 绑定的目标坐标（未绑定则返回 null）。 */
-    public static BlockPos getBindPos(ItemStack stack) {
+    /** 全部绑定（每项：x,y,z,dim）。旧版单绑定会自动兼容。 */
+    public static java.util.List<Object[]> getBinds(ItemStack stack) {
+        java.util.List<Object[]> out = new java.util.ArrayList<>();
         var t = stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag();
-        return t.contains(TAG_BX) ? new BlockPos(t.getInt(TAG_BX), t.getInt(TAG_BY), t.getInt(TAG_BZ)) : null;
+        ListTag list = t.getList(TAG_BINDS, 10);
+        for (int i = 0; i < list.size(); i++) {
+            CompoundTag e = list.getCompound(i);
+            out.add(new Object[]{e.getInt("x"), e.getInt("y"), e.getInt("z"), e.getString("d")});
+        }
+        if (out.isEmpty() && t.contains(TAG_BX)) {
+            out.add(new Object[]{t.getInt(TAG_BX), t.getInt(TAG_BY), t.getInt(TAG_BZ), t.getString(TAG_BD)});
+        }
+        return out;
     }
 
-    /** 绑定的维度 id（未绑定则返回空串）。 */
+    public static int getBindCount(ItemStack stack) { return getBinds(stack).size(); }
+
+    /** 当前选中的绑定索引（越界自动回绕）。 */
+    public static int getBindIndex(ItemStack stack) {
+        int n = getBindCount(stack);
+        if (n == 0) return -1;
+        int i = stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag().getInt(TAG_BIDX);
+        return (i % n + n) % n;
+    }
+
+    /** 切到下一个绑定，返回新的选中项 [x,y,z,dim]，没有绑定则返回 null。 */
+    public static Object[] cycleBind(ItemStack stack) {
+        int n = getBindCount(stack);
+        if (n == 0) return null;
+        final int[] next = {(getBindIndex(stack) + 1) % n};
+        CustomData.update(DataComponents.CUSTOM_DATA, stack, t -> t.putInt(TAG_BIDX, next[0]));
+        return getBinds(stack).get(next[0]);
+    }
+
+    public static boolean hasBind(ItemStack stack) { return getBindCount(stack) > 0; }
+
+    /** 当前选中的绑定坐标（无绑定返回 null）。 */
+    public static BlockPos getBindPos(ItemStack stack) {
+        java.util.List<Object[]> all = getBinds(stack);
+        if (all.isEmpty()) return null;
+        Object[] e = all.get(Math.max(0, getBindIndex(stack)));
+        return new BlockPos((int) e[0], (int) e[1], (int) e[2]);
+    }
+
     public static String getBindDim(ItemStack stack) {
-        return stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag().getString(TAG_BD);
+        java.util.List<Object[]> all = getBinds(stack);
+        if (all.isEmpty()) return "";
+        return (String) all.get(Math.max(0, getBindIndex(stack)))[3];
     }
 
     public static StickerMode getSelectedMode(ItemStack stack) {

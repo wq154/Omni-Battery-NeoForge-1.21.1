@@ -17,6 +17,9 @@ public class OmniBatteryMenu extends AbstractContainerMenu {
     // ---------------- 用电配置页 ----------------
     /** 界面最多展示的机器数（仅用于按钮 id 分配；实际列表由 BE 的 NBT 同步，无上限时为 0）。 */
     public static final int TARGET_COUNT = 0;
+
+    /** 主界面"切换电池"按钮 id（切到贴纸绑定的下一块电池）。 */
+    public static final int SWITCH_BATTERY = 800;
     /** 电池位置的数据槽（服务端每 tick 写入，客户端据此查找客户端 BE）。 */
     private static final int POS_SLOT = 15 + OmniBatteryBlockEntity.HISTORY_SIZE * 4 + 8;
 
@@ -119,6 +122,13 @@ public class OmniBatteryMenu extends AbstractContainerMenu {
                         "电池权限：" + blockEntity.getAccess().display()), true);
             }
             default -> {
+                if (button == SWITCH_BATTERY) {
+                    // 切到贴纸绑定的下一块电池并打开它的界面
+                    if (player instanceof net.minecraft.server.level.ServerPlayer sp2) {
+                        cn.ayaka.omnibattery.network.OpenBoundBatteryPayload.handleOpen(sp2, true);
+                    }
+                    return true;
+                }
                 if (button >= 400 && button < 4000) {
                     return applyTargetOption((button - 400) / 4, (button - 400) % 4, player);
                 }

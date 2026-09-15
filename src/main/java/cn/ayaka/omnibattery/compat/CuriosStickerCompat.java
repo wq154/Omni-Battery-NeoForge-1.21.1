@@ -15,6 +15,22 @@ import java.util.Optional;
 public final class CuriosStickerCompat {
     private CuriosStickerCompat() {}
 
+    /** 找一枚已绑定快捷键目标的贴纸。 */
+    public static ItemStack findStickerWithBind(Player player) {
+        Optional<ICuriosItemHandler> handler = CuriosApi.getCuriosInventory(player);
+        if (handler.isEmpty()) return ItemStack.EMPTY;
+        for (var entry : handler.get().getCurios().entrySet()) {
+            var stacks = entry.getValue().getStacks();
+            for (int i = 0; i < stacks.getSlots(); i++) {
+                ItemStack s = stacks.getStackInSlot(i);
+                if (s.getItem() instanceof MachineStickerItem && MachineStickerItem.hasBind(s)) {
+                    return s;
+                }
+            }
+        }
+        return ItemStack.EMPTY;
+    }
+
     public static ItemStack findAutoSticker(Player player) {
         Optional<ICuriosItemHandler> handler = CuriosApi.getCuriosInventory(player);
         if (handler.isEmpty()) return ItemStack.EMPTY;

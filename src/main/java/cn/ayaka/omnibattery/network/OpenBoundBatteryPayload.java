@@ -34,6 +34,13 @@ public record OpenBoundBatteryPayload(boolean unused) implements CustomPacketPay
     public static void handle(OpenBoundBatteryPayload payload, IPayloadContext ctx) {
         ctx.enqueueWork(() -> {
             if (!(ctx.player() instanceof ServerPlayer sp)) return;
+            handleOpen(sp, false);
+        });
+    }
+
+    /** 供切换按钮复用：next=true 时先切到下一个绑定。 */
+    public static void handleOpen(ServerPlayer sp, boolean next) {
+            // 不必手持：只要身上带着已绑定的标签工具就行（主副手 -> 物品栏 -> 饰品栏）
             ItemStack sticker = ItemStack.EMPTY;
             for (InteractionHand hand : InteractionHand.values()) {
                 ItemStack st = sp.getItemInHand(hand);
@@ -43,7 +50,24 @@ public record OpenBoundBatteryPayload(boolean unused) implements CustomPacketPay
                 }
             }
             if (sticker.isEmpty()) {
-                sp.displayClientMessage(Component.literal("\u624b\u6301\u5df2\u7ed1\u5b9a\u7684\u8d34\u7eb8\u624d\u80fd\u5feb\u6377\u6253\u5f00\u7535\u6c60").withStyle(net.minecraft.ChatFormatting.GRAY), true);
+                var inv = sp.getInventory();
+                for (int i = 0; i < inv.getContainerSize(); i++) {
+                    ItemStack st = inv.getItem(i);
+                    if (st.getItem() instanceof MachineStickerItem && MachineStickerItem.hasBind(st)) {
+                        sticker = st;
+                        break;
+                    }
+                }
+            }
+            if (sticker.isEmpty()) {
+                ItemStack cu = cn.ayaka.omnibattery.compat.CuriosCompat.findStickerWithBind(sp);
+                if (!cu.isEmpty()) sticker = cu;
+            }
+            if (!sticker.isEmpty() && next) {
+                MachineStickerItem.cycleBind(sticker);   // 切到下一块电池
+            }
+            if (sticker.isEmpty()) {
+                sp.displayClientMessage(Component.literal("\u8eab\u4e0a\u8981\u5e26\u7740\u5df2\u7ed1\u5b9a\u7684\u6807\u7b7e\u5de5\u5177\u624d\u80fd\u5feb\u6377\u6253\u5f00\u7535\u6c60").withStyle(net.minecraft.ChatFormatting.GRAY), true);
                 return;
             }
             BlockPos pos = MachineStickerItem.getBindPos(sticker);
@@ -64,6 +88,5 @@ public record OpenBoundBatteryPayload(boolean unused) implements CustomPacketPay
                 return;
             }
             sp.openMenu(be);
-        });
     }
 }

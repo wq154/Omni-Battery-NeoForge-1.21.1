@@ -39,6 +39,24 @@ public final class CuriosCompat {
         }
     }
 
+    /** 找一枚"已绑定快捷键目标"的贴纸（同为反射调用，Curios 缺失时返回空）。 */
+    public static ItemStack findStickerWithBind(Player player) {
+        return InvokeFindBound.invoke(player);
+    }
+
+    /** 反射桥：调用 CuriosStickerCompat.findStickerWithBind，避免硬依赖 Curios。 */
+    private static final class InvokeFindBound {
+        static ItemStack invoke(Player player) {
+            try {
+                Class<?> cls = Class.forName("cn.ayaka.omnibattery.compat.CuriosStickerCompat");
+                Object r = cls.getMethod("findStickerWithBind", Player.class).invoke(null, player);
+                return r instanceof ItemStack is ? is : ItemStack.EMPTY;
+            } catch (Throwable t) {
+                return ItemStack.EMPTY;
+            }
+        }
+    }
+
     public static boolean isCuriosLoaded() {
         return CURIOS_LOADED;
     }
