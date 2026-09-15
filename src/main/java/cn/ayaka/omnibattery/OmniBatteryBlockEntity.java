@@ -429,7 +429,9 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         for (BlockPos p : data.positions()) {
             StickerSavedData.StickerEntry e = data.getEntry(p);
             if (e == null || e.mode() == null) continue;
-            out.add(new TargetInfo(p.getX(), p.getY(), p.getZ(), e.mode().ordinal(),
+            // 注意：必须用 targetModeOrdinal（显示顺序 0吸电/1供电/2过载），
+            // 不能用 e.mode().ordinal() —— 枚举常量的声明顺序与之不同，会导致"吸电/供电"显示互换。
+            out.add(new TargetInfo(p.getX(), p.getY(), p.getZ(), targetModeOrdinal(p),
                     targetAbsorbLastSecond.getOrDefault(p.asLong(), 0L),
                     targetSupplyLastSecond.getOrDefault(p.asLong(), 0L)));
         }

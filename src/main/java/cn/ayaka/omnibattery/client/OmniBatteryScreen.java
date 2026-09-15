@@ -319,8 +319,7 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
 
         // ---- 表头 ----
         graphics.drawString(font, "机器", x + 12, y + CFG_HEAD_Y, 0xFFEAF1F8, false);
-        graphics.drawString(font, "坐标", x + 88, y + CFG_HEAD_Y, 0xFFEAF1F8, false);
-        graphics.drawString(font, "吸电 / 供电", x + 136, y + CFG_HEAD_Y, 0xFFEAF1F8, false);
+        graphics.drawString(font, "吸电 / 供电 (FE/s)", x + 78, y + CFG_HEAD_Y, 0xFFEAF1F8, false);
 
         // ---- 数据行 ----
         for (int row = 0; row < CFG_PER_PAGE && start + row < view.size(); row++) {
@@ -335,13 +334,13 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
                         .getBlockState(new net.minecraft.core.BlockPos(r[1], r[2], r[3]));
                 if (!st.isAir()) name = st.getBlock().getName().getString();
             }
-            if (name.length() > 6) name = name.substring(0, 6) + "…";
+            if (name.length() > 7) name = name.substring(0, 7) + "…";
             graphics.drawString(font, name, x + 10, ry + 5, 0xFFFFFFFF, false);
-            graphics.drawString(font, r[1] + "," + r[2] + "," + r[3], x + 88, ry + 5, 0xFF9FB3C8, false);
 
+            // 用短格式（如 "1.2K"），保证不会挤到右侧的模式按钮
             long ab = cfgRate(r, false), su = cfgRate(r, true);
-            String rate = OmniBatteryMenu.fmt(ab) + " / " + OmniBatteryMenu.fmt(su);
-            graphics.drawString(font, rate, x + 136, ry + 5,
+            String rate = OmniBatteryMenu.fmtShort(ab) + " / " + OmniBatteryMenu.fmtShort(su);
+            graphics.drawString(font, rate, x + 78, ry + 5,
                     (ab > 0 ? 0xFFFFA640 : (su > 0 ? 0xFF6AE8E0 : 0xFF6E7076)), false);
 
             String[] modes = {"吸电", "供电", "过载"};
