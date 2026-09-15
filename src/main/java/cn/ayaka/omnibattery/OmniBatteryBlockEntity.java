@@ -342,6 +342,28 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         return 0;
     }
 
+
+    /** 过载探测：记录各目标机器上次的能量，用于判断它是否"正在运行"（能量在下降）。 */
+    private final java.util.HashMap<Long, Long> overloadLastEnergy = new java.util.HashMap<>();
+
+    /**
+     * 目标机器是否"正在运行"：与上次探测相比，它的能量在下降（说明正在消耗）。
+     * 只有运行中的机器才允许过载强灌——待机机器保持它自己本来的 NBT，
+     * 不会被电池持续喂电，电池也就不会被抽干。
+     */
+    private boolean isTargetRunning(net.minecraft.core.BlockPos pos, IEnergyStorage storage) {
+        long now;
+        try {
+            now = storage.getEnergyStored();
+            if (now <= 0L) now = readEnergyReflective(storage);
+        } catch (Throwable t) {
+            now = readEnergyReflective(storage);
+        }
+        if (now < 0L) return false;
+        Long prev = overloadLastEnergy.put(pos.asLong(), now);
+        return prev != null && now < prev;
+    }
+
     private int tryAbsorbFrom(Level level, BlockEntity be, Direction dir, int request, StickerMode sticker) {
         BlockState state = level.getBlockState(be.getBlockPos());
         IEnergyStorage storage = level.getCapability(Capabilities.EnergyStorage.BLOCK, be.getBlockPos(), state, be, dir);
@@ -351,15 +373,8 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         if (sticker == StickerMode.OVERLOAD) {
             if (!canActuallyExtract(storage, request) && readEnergyReflective(storage) <= 0L) return 0;
             int moved = transferExtractLoop(storage, request);
-            if (moved < request) {
-                // 硬抽只针对"已接近盈满"的机器：避免把待机/运行中机器赖以运行的电抽干。
-                long stored = readEnergyReflective(storage);
-                long capacity = storage.getMaxEnergyStored();
-                if (capacity > 0 && stored * 10 >= capacity * 9) {
-                    moved += drainEnergyReflective(storage, request - moved);
-                    if (moved < request) moved += drainEnergyNbt(level, be, request - moved);
-                }
-            }
+            if (moved < request) moved += drainEnergyReflective(storage, request - moved);
+            if (moved < request) moved += drainEnergyNbt(level, be, request - moved);
             return moved;
         }
         return 0;
@@ -373,20 +388,18 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         if (sticker == StickerMode.SUPPLY) return transferReceiveOnce(storage, request);
         if (sticker == StickerMode.OVERLOAD) {
             int moved = transferReceiveLoop(storage, request);
-            if (moved < request) {
-                // 硬灌前先确认机器还有空余容量。机器已满（或读不到容量）时不再硬灌，
-                // 否则会无视机器容量持续灌入，把电池的电白白抽干（待机机器最明显）。
-                long stored = readEnergyReflective(storage);
+            // 过载强灌只在机器"正在运行"（能量在下降）时发生；
+            // 待机机器保持它本来的 NBT，不会被持续喂电，电池也就不会被抽干。
+            if (moved < request && isTargetRunning(be.getBlockPos(), storage)) {
+                int want = request - moved;
                 long capacity = storage.getMaxEnergyStored();
-                if (capacity > 0 && stored >= 0 && stored < capacity) {
-                    int room = BatteryData.clampToForgeInt(capacity - stored);
-                    int budget = Math.min(request - moved, room);
-                    int extra = fillEnergyReflective(storage, budget);
-                    moved += extra;
-                    if (moved < request) {
-                        moved += fillEnergyNbt(level, be, Math.min(request - moved, room));
-                    }
+                if (capacity > 0) {
+                    long stored = storage.getEnergyStored();
+                    if (stored >= capacity) return moved;                       // 已满：不再灌
+                    want = Math.min(want, BatteryData.clampToForgeInt(capacity - stored));
                 }
+                moved += fillEnergyReflective(storage, want);
+                if (moved < request) moved += fillEnergyNbt(level, be, request - moved);
             }
             return moved;
         }
