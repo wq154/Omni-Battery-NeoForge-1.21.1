@@ -123,9 +123,13 @@ public class OmniBatteryMenu extends AbstractContainerMenu {
             }
             default -> {
                 if (button == SWITCH_BATTERY) {
-                    // 切到贴纸绑定的下一块电池并打开它的界面
+                    // 切到贴纸绑定的下一块电池并打开它的界面。
+                    // 关键：绝不能在这个菜单回调内部直接 openMenu —— 旧容器此刻仍在 tick 处理中，
+                    // 立刻换菜单会破坏容器状态并直接导致服务端崩溃。推迟到下一 tick 执行。
                     if (player instanceof net.minecraft.server.level.ServerPlayer sp2) {
-                        cn.ayaka.omnibattery.network.OpenBoundBatteryPayload.handleOpen(sp2, true);
+                        sp2.server.tell(new net.minecraft.server.TickTask(
+                                sp2.server.getTickCount() + 1,
+                                () -> cn.ayaka.omnibattery.network.OpenBoundBatteryPayload.handleOpen(sp2, true)));
                     }
                     return true;
                 }

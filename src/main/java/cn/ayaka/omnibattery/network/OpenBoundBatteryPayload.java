@@ -38,8 +38,13 @@ public record OpenBoundBatteryPayload(boolean unused) implements CustomPacketPay
         });
     }
 
-    /** 供切换按钮复用：next=true 时先切到下一个绑定。 */
+    /** 供切换按钮复用：next=true 时先切到下一个绑定。内部保证在服务器主线程执行。 */
     public static void handleOpen(ServerPlayer sp, boolean next) {
+        if (sp == null || sp.hasDisconnected()) return;
+        if (!sp.server.isSameThread()) {
+            sp.server.execute(() -> handleOpen(sp, next));
+            return;
+        }
             // 不必手持：只要身上带着已绑定的标签工具就行（主副手 -> 物品栏 -> 饰品栏）
             ItemStack sticker = ItemStack.EMPTY;
             for (InteractionHand hand : InteractionHand.values()) {
