@@ -54,6 +54,8 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
     private static final int BTN_PM_W = 18;
 
     private int pressedId = -1;
+    /** 0 = 主界面，1 = 用电配置子页。 */
+    private int page = 0;
     private String hint = null;
 
     public OmniBatteryScreen(OmniBatteryMenu menu, Inventory inv, Component title) {
@@ -72,10 +74,17 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
     protected void renderBg(GuiGraphics graphics, float partialTick, int mouseX, int mouseY) {
         int x = leftPos;
         int y = topPos;
+        if (page == 1) {
+            drawFrame(graphics, x, y);
+            drawConfigPage(graphics, x, y, mouseX, mouseY);
+            return;
+        }
         int dark = tierDark();
         int mid = tierMid();
         int bright = tierBright();
         hint = null;
+
+        drawFrame(graphics, x, y);
 
         // ==== 外框（Minecraft 原版 GUI 灰色底 + 立体边框）====
         graphics.fill(x, y, x + W, y + H, 0xFF555555);            // 外框深灰
@@ -191,8 +200,8 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
                 menu.getAccessDisplay(), mouseX, mouseY, 8, "切换权限：私人 / 队伍 / 公开");
 
         // ==== 用电报告按钮（趋势标题右侧）====
-        drawChip(graphics, rightEdge - 62, y + TREND_TITLE_Y - 5, 62, 14, "用电报告",
-                mouseX, mouseY, 9, "列出正在从本电池取电的机器（按取电量排序）");
+        drawChip(graphics, rightEdge - 62, y + TREND_TITLE_Y - 5, 62, 14, "用电配置",
+                mouseX, mouseY, 9, "查看/调整本维度所有打了标签的机器");
 
         // ==== 趋势图（最近吸电/供电每秒趋势）====
         drawTrend(graphics, x, y);
@@ -208,6 +217,55 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
 
     /** 圆形能量表：外圈刻度环 + 内部扇形填充 + 中央文字。
      *  ultimateMode=true 时不画扇形（终极容量无限，扇形无意义），只显示中心电量。 */
+    private static final int CONFIG_ROW0 = 38;
+    private static final int CONFIG_ROW_H = 24;
+
+    /** 绘制 GUI 外框（主界面 / 子页共用）。 */
+    private void drawFrame(GuiGraphics graphics, int x, int y) {
+        graphics.fill(x, y, x + W, y + H, 0xFF555555);
+        graphics.fill(x + 1, y + 1, x + W - 1, y + H - 1, 0xFFC6C6C6);
+        graphics.fill(x + 1, y + 1, x + W - 1, y + 2, 0xFFFFFFFF);
+        graphics.fill(x + 1, y + 1, x + 2, y + H - 1, 0xFFFFFFFF);
+        graphics.fill(x + W - 2, y + 1, x + W - 1, y + H - 1, 0xFF555555);
+        graphics.fill(x + 1, y + H - 2, x + W - 1, y + H - 1, 0xFF555555);
+    }
+
+    /** 用电配置子页：列出本维度所有已打标签的机器，可直接切换模式。 */
+    private void drawConfigPage(GuiGraphics graphics, int x, int y, int mouseX, int mouseY) {
+        hint = null;
+        graphics.fill(x + 4, y + 4, x + W - 4, y + 28, 0xFF373737);
+        graphics.fill(x + 5, y + 5, x + W - 5, y + 27, 0xFF8B8B8B);
+        graphics.drawString(font, "用电配置 · 已打标签的机器", x + 10, y + 12, 0xFF202020, false);
+        drawChip(graphics, x + W - 68, y + 8, 60, 16, "返回", mouseX, mouseY, -1, "返回主界面");
+
+        int shown = 0;
+        for (int i = 0; i < menu.getTargetCount(); i++) {
+            if (!menu.hasTarget(i)) continue;
+            shown++;
+            int ry = y + CONFIG_ROW0 + i * CONFIG_ROW_H;
+            graphics.fill(x + 8, ry, x + W - 8, ry + 22, 0xFF8B8B8B);
+            graphics.fill(x + 9, ry + 1, x + W - 9, ry + 21, 0xFF373737);
+
+            int tx = menu.getTargetX(i), ty = menu.getTargetY(i), tz = menu.getTargetZ(i);
+            String name = "未知机器";
+            if (minecraft != null && minecraft.level != null) {
+                net.minecraft.world.level.block.state.BlockState st =
+                        minecraft.level.getBlockState(new net.minecraft.core.BlockPos(tx, ty, tz));
+                if (!st.isAir()) name = st.getBlock().getName().getString();
+            }
+            if (name.length() > 9) name = name.substring(0, 9) + "…";
+            graphics.drawString(font, name, x + 14, ry + 7, 0xFFFFFFFF, false);
+            graphics.drawString(font, tx + "," + ty + "," + tz, x + 96, ry + 7, 0xFF9FB3C8, false);
+            drawChip(graphics, x + W - 74, ry + 2, 60, 18, menu.getTargetModeName(i),
+                    mouseX, mouseY, 300 + i, "点击切换：吸电 → 供电 → 过载 → 清除");
+        }
+        if (shown == 0) {
+            graphics.drawString(font, "本维度暂时没有打了标签的机器", x + 14, y + CONFIG_ROW0 + 6, 0xFF8FA6BA, false);
+        }
+        graphics.drawString(font, "模式按钮：吸电 → 供电 → 过载 → 清除",
+                x + 10, y + H - 14, 0xFF8FA6BA, false);
+    }
+
     private void drawCircularGauge(GuiGraphics graphics, int cx, int cy, int r,
                                    float ratio, int dark, int mid, int bright,
                                    String centerText, boolean ultimateMode) {
@@ -327,6 +385,18 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (page == 1) {
+            int x = leftPos;
+            int y = topPos;
+            int mx = (int) mouseX, my = (int) mouseY;
+            if (isHover(mx, my, x + W - 68, y + 8, 60, 16)) { page = 0; return true; }   // 返回
+            for (int i = 0; i < menu.getTargetCount(); i++) {
+                if (!menu.hasTarget(i)) continue;
+                int ry = y + CONFIG_ROW0 + i * CONFIG_ROW_H;
+                if (isHover(mx, my, x + W - 74, ry + 2, 60, 18)) return press(200 + i);
+            }
+            return true;
+        }
         if (button != 0) return super.mouseClicked(mouseX, mouseY, button);
         int x = leftPos, y = topPos;
         int rightEdge = x + W - 8;
@@ -344,8 +414,8 @@ public class OmniBatteryScreen extends AbstractContainerScreen<OmniBatteryMenu> 
         // 范围
         if (isHover(mx, my, minusX, y + ROW3 + 1, BTN_PM_W, BTN_H)) return press(4);
         if (isHover(mx, my, plusX, y + ROW3 + 1, BTN_PM_W, BTN_H)) return press(3);
-        // 用电报告
-        if (isHover(mx, my, rightEdge - 62, y + TREND_TITLE_Y - 5, 62, 14)) return press(9);
+        // 用电配置（本地切页，不发服务端）
+        if (isHover(mx, my, rightEdge - 62, y + TREND_TITLE_Y - 5, 62, 14)) { page = 1; return true; }
         // 玩家供电开关 + 权限（同一行）
         if (isHover(mx, my, rightEdge - 142, y + ROW7 + 1, 40, BTN_H)) return press(6);
         if (isHover(mx, my, rightEdge - 98, y + ROW7 + 1, 40, BTN_H)) return press(7);

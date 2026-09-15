@@ -57,6 +57,11 @@ public class StickerSavedData extends SavedData {
         return e == null ? null : e.mode();
     }
 
+    /** 所有已打标签的机器坐标（供用电配置界面枚举）。 */
+    public java.util.Set<BlockPos> positions() {
+        return new java.util.HashSet<>(stickers.keySet());
+    }
+
     public StickerEntry getEntry(BlockPos pos) {
         return stickers.get(pos);
     }

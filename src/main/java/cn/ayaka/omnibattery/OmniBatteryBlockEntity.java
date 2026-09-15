@@ -369,6 +369,51 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         return out;
     }
 
+
+    /** 本维度已打标签的机器（供"用电配置"界面枚举）。 */
+    public java.util.List<BlockPos> stickerTargetsHere(int limit) {
+        java.util.List<BlockPos> out = new java.util.ArrayList<>();
+        if (!(level instanceof net.minecraft.server.level.ServerLevel sl)) return out;
+        StickerSavedData data = StickerSavedData.get(sl);
+        for (BlockPos p : data.positions()) {
+            StickerSavedData.StickerEntry e = data.getEntry(p);
+            if (e == null || !e.mode().isActiveTransferMode()) continue;
+            out.add(p);
+            if (out.size() >= limit) break;
+        }
+        return out;
+    }
+
+    /** 目标机器的模式序号（0 吸电 / 1 供电 / 2 过载），供 GUI 同步。 */
+    public int targetModeOrdinal(BlockPos pos) {
+        if (pos == null || !(level instanceof net.minecraft.server.level.ServerLevel sl)) return 0;
+        StickerSavedData.StickerEntry e = StickerSavedData.get(sl).getEntry(pos);
+        if (e == null) return 0;
+        return switch (e.mode()) {
+            case ABSORB -> 0;
+            case SUPPLY -> 1;
+            default -> 2;
+        };
+    }
+
+    /** 循环切换某台被打标签机器的模式：吸电 → 供电 → 过载 → 清除 → 吸电。 */
+    public boolean cycleTargetMode(BlockPos pos, Player player) {
+        if (pos == null || !canManage(player)) return false;
+        if (!(level instanceof net.minecraft.server.level.ServerLevel sl)) return false;
+        StickerSavedData data = StickerSavedData.get(sl);
+        StickerSavedData.StickerEntry e = data.getEntry(pos);
+        if (e == null) return false;
+        StickerMode cur = e.mode();
+        StickerMode next;
+        if (cur == StickerMode.ABSORB) next = StickerMode.SUPPLY;
+        else if (cur == StickerMode.SUPPLY) next = StickerMode.OVERLOAD;
+        else if (cur == StickerMode.OVERLOAD) next = null;      // null = 清除标签
+        else next = StickerMode.ABSORB;
+        data.setMode(pos, next, e.owner(), e.ownerName());
+        setChanged();
+        return true;
+    }
+
     private boolean hasAnyEnergyCapability(Level level, BlockEntity be) {
         BlockState state = level.getBlockState(be.getBlockPos());
         for (Direction dir : CAP_SIDES) {
@@ -465,29 +510,10 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         if (isOwnOrOmniBatteryStorage(be, storage)) return 0;
         if (sticker == StickerMode.SUPPLY) return transferReceiveOnce(storage, request);
         if (sticker == StickerMode.OVERLOAD) {
+            // 过载 = 强力双向：标准接口之后再用反射 / NBT 灌满（恢复原有行为）
             int moved = transferReceiveLoop(storage, request);
-            long key = be.getBlockPos().asLong();
-            // 硬灌前记下机器能量，灌完再验：机器能量没涨 = 这些电被丢弃（无底洞）。
-            // 此时把白送出去的电退回电池，并把该目标拉黑，不再对它硬灌。
-            if (moved < request && !overloadVoidTargets.contains(key)) {
-                long before = probeEnergy(storage);
-                int extra = fillEnergyReflective(storage, request - moved);
-                if (extra <= 0) {
-                    extra = fillEnergyNbt(level, be, request - moved);
-                }
-                if (extra > 0) {
-                    long after = probeEnergy(storage);
-                    // 只有"确认电真的进到机器里"（after 明确大于 before）才算成功；
-                    // 读不到能量或没有增长，一律按"吞电不存"处理（宁可拉黑，也不做无底洞）。
-                    if (!(before >= 0L && after >= 0L && after > before)) {
-                        energyStorage.receiveEnergy(extra, false);   // 退回电池
-                        overloadVoidTargets.add(key);                // 拉黑：不再白送
-                        notifyVoidTarget(level, be.getBlockPos());   // 提示附近玩家改用供电标签
-                    } else {
-                        moved += extra;
-                    }
-                }
-            }
+            if (moved < request) moved += fillEnergyReflective(storage, request - moved);
+            if (moved < request) moved += fillEnergyNbt(level, be, request - moved);
             return moved;
         }
         return 0;
