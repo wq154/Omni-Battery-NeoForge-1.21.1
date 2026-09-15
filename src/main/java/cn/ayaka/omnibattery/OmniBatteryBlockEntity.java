@@ -926,9 +926,16 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
         return false;
     }
 
-    /** 仅主人可修改电池设置（其他人仍可看 GUI）。 */
+    /**
+     * 谁可以修改电池设置：
+     * 私人 → 仅主人；队伍 / 公开 → 主人 + 同队队友（原版 /team 或 FTB 队伍）。
+     */
     public boolean canManage(Player player) {
-        return player != null && ownerUuid != null && ownerUuid.equals(player.getUUID());
+        if (player == null || ownerUuid == null) return false;
+        if (ownerUuid.equals(player.getUUID())) return true;
+        if (access == BatteryAccess.PRIVATE) return false;
+        // 队伍 / 公开档位：队友同样可以修改全部配置
+        return sameTeam(ownerUuid, ownerName, player.getUUID(), player.getGameProfile().getName());
     }
 
     /** 某玩家是否可用本电池传电。 */
