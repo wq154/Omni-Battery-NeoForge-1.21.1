@@ -689,7 +689,12 @@ public class OmniBatteryBlockEntity extends BlockEntity implements MenuProvider 
             long stored = storage.getEnergyStored();
             if (stored < 0L) stored = 0L;
             long room = cap - stored;
-            if (room <= 0L) return 0;                       // 已经达到设定值，不再灌
+            if (room <= 0L) {
+                // 机器电量已经达到（或超过）设定值：不再"灌"。
+                // 但绝不能什么都不做 —— 那样玩家会觉得"打上自定义就彻底没反应、连普通供电都没有"。
+                // 这里退回成普通的供电行为（和 SUPPLY 标签一致），保证基本功能始终可用。
+                return transferReceiveOnce(storage, request);
+            }
             int budget = (int) Math.min(Math.min((long) request, room), Integer.MAX_VALUE);
             int moved = transferReceiveLoop(storage, budget);
             if (moved < budget) moved += fillEnergyReflective(storage, budget - moved);
